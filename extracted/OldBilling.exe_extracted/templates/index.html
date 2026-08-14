@@ -1351,7 +1351,17 @@
         }
         */
 
-        function saveData() {
+        function escapeHtml(text) {
+            if (!text) return "";
+            return String(text)
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;");
+        }
+
+        async function saveData() {
 
             const original = document.getElementById("a4");
             const clone = original.cloneNode(true);
@@ -1376,27 +1386,38 @@
 
                 if (!name) return;
 
-                fetch("/save", {
-                    method: "POST",
-                    headers: {
-                        "Content-Type": "application/json"
-                    },
-                    body: JSON.stringify({
-                        name: name,
-                        data: cleanedHTML
-                    })
-                })
-                    .then(res => res.json())
-                    .then(result => {
-
-                        currentInvoiceId = result.invoice_id;
-                        currentFileName = name;
-
-                        alert("Invoice saved");
-
-                        loadInvoiceList();
-
+                try {
+                    const response = await fetch("/save", {
+                        method: "POST",
+                        headers: {
+                            "Content-Type": "application/json"
+                        },
+                        body: JSON.stringify({
+                            name: name,
+                            data: cleanedHTML
+                        })
                     });
+
+                    const result = await response.json();
+
+                    if (!response.ok) {
+                        throw new Error(result.error || `Server returned error ${response.status}`);
+                    }
+
+                    console.log("SAVE SUCCESS:", result);
+
+                    currentInvoiceId = result.invoice_id;
+                    currentFileName = name;
+
+                    alert("Invoice saved");
+
+                    console.log("CALLING loadInvoiceList AFTER SAVE");
+                    await loadInvoiceList();
+
+                } catch (err) {
+                    console.error("Save error:", err);
+                    alert("Error saving invoice: " + (err.message || err));
+                }
 
             }
 
@@ -1404,22 +1425,36 @@
 
             else {
 
-                fetch("/update-invoice", {
-                    method: "POST",
-                    headers: {
-                        "Content-Type": "application/json"
-                    },
-                    body: JSON.stringify({
-                        id: currentInvoiceId,
-                        name: currentFileName,
-                        data: cleanedHTML
-                    })
-                })
-                    .then(res => res.json())
-                    .then(result => {
-                        alert("Invoice updated");
-                        loadInvoiceList();
+                try {
+                    const response = await fetch("/update-invoice", {
+                        method: "POST",
+                        headers: {
+                            "Content-Type": "application/json"
+                        },
+                        body: JSON.stringify({
+                            id: currentInvoiceId,
+                            name: currentFileName,
+                            data: cleanedHTML
+                        })
                     });
+
+                    const result = await response.json();
+
+                    if (!response.ok) {
+                        throw new Error(result.error || `Server returned error ${response.status}`);
+                    }
+
+                    console.log("UPDATE SUCCESS:", result);
+
+                    alert("Invoice updated");
+
+                    console.log("CALLING loadInvoiceList AFTER UPDATE");
+                    await loadInvoiceList();
+
+                } catch (err) {
+                    console.error("Update error:", err);
+                    alert("Error updating invoice: " + (err.message || err));
+                }
 
             }
 
@@ -1427,40 +1462,61 @@
 
         async function loadInvoiceList() {
 
-            const res = await fetch("/get-invoices");
-            const invoices = await res.json();
+            console.log("loadInvoiceList STARTED");
 
-            const container = document.getElementById("invoice-list");
+            try {
+                const res = await fetch("/get-invoices");
+                console.log("GET /get-invoices STATUS:", res.status);
+                if (!res.ok) {
+                    const errData = await res.json().catch(() => ({}));
+                    console.error("Failed to fetch invoices:", errData.error || res.status);
+                    return;
+                }
+                const invoices = await res.json();
+                console.log("INVOICES RECEIVED:", invoices);
+                console.log("INVOICE COUNT:", Array.isArray(invoices) ? invoices.length : 0);
 
-            container.innerHTML = "";
+                const container = document.getElementById("invoice-list");
+                if (!container) {
+                    console.error("CONTAINER #invoice-list NOT FOUND!");
+                    return;
+                }
 
-            let currentGroup = "";
+                console.log("RENDERING SAVED INVOICES");
+                container.innerHTML = "";
 
-            invoices
-                .sort((a, b) => b.id - a.id)   // newest first
-                .forEach(inv => {
+                if (!Array.isArray(invoices) || invoices.length === 0) {
+                    console.log("No invoices found to render.");
+                    return;
+                }
 
-                    const label = getDateLabel(inv.id);
+                let currentGroup = "";
 
-                    if (label !== currentGroup) {
+                invoices
+                    .sort((a, b) => Number(b.id || 0) - Number(a.id || 0))   // newest first
+                    .forEach(inv => {
 
-                        const header = document.createElement("div");
-                        header.className = "date-header";
-                        header.textContent = label;
+                        const label = getDateLabel(inv.created_at || inv.id);
 
-                        container.appendChild(header);
+                        if (label !== currentGroup) {
 
-                        currentGroup = label;
+                            const header = document.createElement("div");
+                            header.className = "date-header";
+                            header.textContent = label;
 
-                    }
+                            container.appendChild(header);
 
-                    const row = document.createElement("div");
+                            currentGroup = label;
 
-                    row.className = "invoice-item";
+                        }
 
-                    row.innerHTML = `
+                        const row = document.createElement("div");
+
+                        row.className = "invoice-item";
+
+                        row.innerHTML = `
 <div class="invoice-id" onclick="loadInvoice('${inv.id}')">
-${inv.name}
+${escapeHtml(inv.name || 'Untitled Invoice')}
 </div>
 
 <div class="right-actions">
@@ -1469,23 +1525,38 @@ ${inv.name}
 </div>
 `;
 
-                    container.appendChild(row);
+                        container.appendChild(row);
 
-                });
+                    });
+                console.log("FINISHED RENDERING. Total rendered rows in container:", container.children.length);
+            } catch (err) {
+                console.error("Error loading invoice list:", err);
+            }
 
         }
 
         async function loadInvoice(id) {
 
-            const res = await fetch("/get-invoice/" + id);
-            const data = await res.json();
+            try {
+                const res = await fetch("/get-invoice/" + id);
+                if (!res.ok) {
+                    throw new Error(`Failed to load invoice ${id}`);
+                }
+                const data = await res.json();
 
-            if (!data.data) return;
+                if (!data || !data.data) {
+                    console.warn("Invoice data is empty:", data);
+                    return;
+                }
 
-            document.getElementById("a4").outerHTML = data.data;
+                document.getElementById("a4").outerHTML = data.data;
 
-            currentInvoiceId = data.id;
-            currentFileName = data.name;
+                currentInvoiceId = data.id;
+                currentFileName = data.name;
+            } catch (err) {
+                console.error("Error loading invoice:", err);
+                alert("Error loading invoice: " + (err.message || err));
+            }
 
         }
 
@@ -1743,18 +1814,26 @@ ${inv.name}
 
             if (!newId) return;
 
-            await fetch("/rename-invoice", {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json"
-                },
-                body: JSON.stringify({
-                    old_id: oldId,
-                    new_id: newId
-                })
-            });
-
-            loadInvoiceList();
+            try {
+                const res = await fetch("/rename-invoice", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({
+                        old_id: oldId,
+                        new_id: newId
+                    })
+                });
+                const result = await res.json();
+                if (!res.ok) {
+                    throw new Error(result.error || `Server error ${res.status}`);
+                }
+                await loadInvoiceList();
+            } catch (err) {
+                console.error("Rename error:", err);
+                alert("Error renaming invoice: " + (err.message || err));
+            }
 
         }
 
@@ -1762,22 +1841,42 @@ ${inv.name}
 
             if (!confirm("Delete invoice " + id + " ?")) return;
 
-            await fetch("/delete-invoice", {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json"
-                },
-                body: JSON.stringify({ id: id })
-            });
-
-            loadInvoiceList();
+            try {
+                const res = await fetch("/delete-invoice", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({ id: id })
+                });
+                const result = await res.json();
+                if (!res.ok) {
+                    throw new Error(result.error || `Server error ${res.status}`);
+                }
+                await loadInvoiceList();
+            } catch (err) {
+                console.error("Delete error:", err);
+                alert("Error deleting invoice: " + (err.message || err));
+            }
 
         }
 
 
         function getDateLabel(timestamp) {
 
-            const date = new Date(parseInt(timestamp));
+            let date;
+            const num = Number(timestamp);
+            if (!isNaN(num) && num > 1000000000000) {
+                date = new Date(num);
+            } else if (timestamp) {
+                date = new Date(timestamp);
+            } else {
+                date = new Date();
+            }
+
+            if (isNaN(date.getTime())) {
+                date = new Date();
+            }
 
             const today = new Date();
             const yesterday = new Date();

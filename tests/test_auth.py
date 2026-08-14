@@ -1,10 +1,12 @@
 import os
 import sys
 import unittest
+from unittest.mock import MagicMock
 
 # Add app directory to path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
+import main
 from main import app, HARI_USERNAME, HARI_PASSWORD
 
 
@@ -13,6 +15,19 @@ class TestHariAppAuth(unittest.TestCase):
         app.config["TESTING"] = True
         app.config["WTF_CSRF_ENABLED"] = False
         self.client = app.test_client()
+        self.mock_supabase = MagicMock()
+        main.supabase = self.mock_supabase
+
+        # Mock table calls
+        mock_table = MagicMock()
+        self.mock_supabase.table.return_value = mock_table
+        mock_select = MagicMock()
+        mock_table.select.return_value = mock_select
+        mock_order = MagicMock()
+        mock_select.order.return_value = mock_order
+        mock_execute = MagicMock()
+        mock_execute.data = []
+        mock_order.execute.return_value = mock_execute
 
     def test_unauthenticated_redirect(self):
         """1. Open the application unauthenticated -> redirects to login page"""

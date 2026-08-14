@@ -4,14 +4,15 @@ import time
 import io
 import webbrowser
 import threading
+from datetime import datetime, timezone
 
 from dotenv import load_dotenv
 from flask import Flask, render_template, request, jsonify, send_file, session, redirect, url_for
-from openpyxl import Workbook, load_workbook
-
-load_dotenv()
+from supabase import create_client
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+load_dotenv(os.path.join(BASE_DIR, ".env"))
+
 EXTRACTED_DIR = os.path.join(
     BASE_DIR,
     "extracted",
@@ -32,14 +33,60 @@ app.config.update(
 HARI_USERNAME = os.environ.get("HARI_USERNAME", "Hari")
 HARI_PASSWORD = os.environ.get("HARI_PASSWORD", "Uma@1999")
 
-FOLDER_PATH = r"C:\SRI Traders"
-FILE_PATH = os.path.join(FOLDER_PATH, "invoices.xlsx")
+SUPABASE_URL = (os.environ.get("SUPABASE_URL") or "").strip()
+SUPABASE_KEY = (os.environ.get("SUPABASE_KEY") or "").strip()
+
+supabase = None
+
+
+def get_supabase():
+    global supabase
+    if supabase is None:
+        url = (os.environ.get("SUPABASE_URL") or SUPABASE_URL or "").strip()
+        key = (os.environ.get("SUPABASE_KEY") or SUPABASE_KEY or "").strip()
+        if url and key:
+            try:
+                supabase = create_client(url, key)
+            except Exception as e:
+                print("Error initializing Supabase client:", e)
+    return supabase
+
+
+def reset_supabase():
+    global supabase
+    supabase = None
+
+
+def format_supabase_error(e):
+    err_str = ""
+    if hasattr(e, "json") and callable(e.json):
+        try:
+            err_dict = e.json()
+            if isinstance(err_dict, dict) and "message" in err_dict:
+                err_str = err_dict["message"]
+        except Exception:
+            pass
+    if not err_str:
+        if hasattr(e, "message") and e.message:
+            err_str = str(e.message)
+        elif hasattr(e, "args") and e.args:
+            first_arg = e.args[0]
+            if isinstance(first_arg, dict) and "message" in first_arg:
+                err_str = first_arg["message"]
+            else:
+                err_str = str(first_arg)
+        else:
+            err_str = str(e)
+
+    if "row-level security" in err_str.lower() or "rls" in err_str.lower():
+        err_str += " (Supabase RLS Policy: The 'invoices' table is blocking write access. Disable RLS or add an INSERT policy for anon in Supabase, or provide the service_role key in .env)"
+    return err_str
 
 
 @app.before_request
 def require_login():
     # Allow login route and static files without login
-    if request.endpoint in ["login", "static"]:
+    if request.endpoint in ["login", "static"] or (request.path and request.path.startswith("/static/")):
         return None
 
     if not session.get("logged_in"):
@@ -76,70 +123,6 @@ def logout():
     return redirect(url_for("login"))
 
 
-def ensure_excel():
-    if not os.path.exists(FOLDER_PATH):
-        os.makedirs(FOLDER_PATH, exist_ok=True)
-
-    if not os.path.exists(FILE_PATH):
-        wb = Workbook()
-        ws = wb.active
-        ws.append(["Invoice ID", "File Name", "HTML Data"])
-        wb.save(FILE_PATH)
-
-
-def load_invoices():
-    ensure_excel()
-
-    wb = load_workbook(FILE_PATH)
-    ws = wb.active
-
-    invoices = []
-
-    for row in ws.iter_rows(min_row=2, values_only=True):
-        if row and row[0] is not None:
-            invoices.append({
-                "id": str(row[0]),
-                "name": str(row[1]) if row[1] is not None else "",
-                "data": str(row[2]) if row[2] is not None else ""
-            })
-
-    return invoices
-
-
-def save_invoice(file_name, html_data):
-    ensure_excel()
-
-    wb = load_workbook(FILE_PATH)
-    ws = wb.active
-
-    invoice_id = str(int(time.time() * 1000))
-
-    ws.append([
-        invoice_id,
-        file_name,
-        html_data
-    ])
-
-    wb.save(FILE_PATH)
-
-    return invoice_id
-
-
-def update_invoice_excel(invoice_id, file_name, html_data):
-    ensure_excel()
-
-    wb = load_workbook(FILE_PATH)
-    ws = wb.active
-
-    for row in ws.iter_rows(min_row=2):
-        if row[0].value is not None and str(row[0].value) == str(invoice_id):
-            row[1].value = file_name
-            row[2].value = html_data
-            break
-
-    wb.save(FILE_PATH)
-
-
 @app.route("/")
 def index():
     return render_template("index.html")
@@ -147,67 +130,165 @@ def index():
 
 @app.route("/get-invoices")
 def get_invoices():
-    invoices = load_invoices()
-    return jsonify(invoices)
+    db = get_supabase()
+    if not db:
+        return jsonify({"error": "Supabase client is not configured"}), 500
+
+    try:
+        response = db.table("invoices").select("id, invoice_id, file_name, html_data, created_at").order("id", desc=True).execute()
+        invoices = []
+        for row in (response.data or []):
+            inv_id_val = str(row.get("invoice_id") or row.get("id") or "")
+            invoices.append({
+                "id": inv_id_val,
+                "name": str(row.get("file_name", "") or ""),
+                "data": str(row.get("html_data", "") or ""),
+                "created_at": str(row.get("created_at", "") or "")
+            })
+        return jsonify(invoices)
+    except Exception as e:
+        err_msg = format_supabase_error(e)
+        print(f"Error fetching invoices from Supabase: {err_msg}")
+        return jsonify({"error": f"Failed to fetch invoices from Supabase: {err_msg}"}), 500
 
 
 @app.route("/get-invoice/<invoice_id>")
 def get_invoice(invoice_id):
-    ensure_excel()
+    db = get_supabase()
+    if not db:
+        return jsonify({"error": "Supabase client is not configured"}), 500
 
-    wb = load_workbook(FILE_PATH)
-    ws = wb.active
+    try:
+        response = db.table("invoices").select("id, invoice_id, file_name, html_data, created_at").eq("invoice_id", str(invoice_id)).execute()
+        if not (response.data and len(response.data) > 0):
+            try:
+                inv_id_int = int(invoice_id)
+                response = db.table("invoices").select("id, invoice_id, file_name, html_data, created_at").eq("id", inv_id_int).execute()
+            except (ValueError, TypeError):
+                pass
 
-    for row in ws.iter_rows(min_row=2, values_only=True):
-        if row and row[0] is not None and str(row[0]) == str(invoice_id):
+        if response.data and len(response.data) > 0:
+            row = response.data[0]
             return jsonify({
-                "id": str(row[0]),
-                "name": str(row[1]) if row[1] is not None else "",
-                "data": str(row[2]) if row[2] is not None else ""
+                "id": str(row.get("invoice_id") or row.get("id")),
+                "name": str(row.get("file_name", "") or ""),
+                "data": str(row.get("html_data", "") or "")
             })
 
-    return jsonify({
-        "id": str(invoice_id),
-        "name": "",
-        "data": ""
-    })
+        return jsonify({
+            "id": str(invoice_id),
+            "name": "",
+            "data": ""
+        })
+    except Exception as e:
+        err_msg = format_supabase_error(e)
+        print(f"Error fetching invoice {invoice_id} from Supabase: {err_msg}")
+        return jsonify({"error": f"Failed to fetch invoice: {err_msg}"}), 500
 
 
 @app.route("/save", methods=["POST"])
 def save():
+    db = get_supabase()
+    if not db:
+        return jsonify({"error": "Supabase client is not configured"}), 500
+
     data = request.json or {}
-
-    file_name = data.get("name", "")
+    file_name = data.get("name", "").strip()
     html_data = data.get("data", "")
+    custom_inv_id = str(data.get("invoice_id") or "").strip()
 
-    inv_id = save_invoice(
-        file_name,
-        html_data
-    )
+    if not file_name:
+        return jsonify({"error": "Invoice name is required"}), 400
 
-    return jsonify({
-        "message": "Invoice saved",
-        "invoice_id": inv_id
-    })
+    invoice_id = custom_inv_id if custom_inv_id else str(int(time.time() * 1000))
+
+    try:
+        response = db.table("invoices").insert({
+            "invoice_id": invoice_id,
+            "file_name": file_name,
+            "html_data": html_data
+        }).execute()
+
+        return jsonify({
+            "message": "Invoice saved",
+            "invoice_id": invoice_id
+        })
+    except Exception as e:
+        err_msg = format_supabase_error(e)
+        print(f"Error saving invoice to Supabase: {err_msg}")
+        return jsonify({"error": f"Failed to save invoice to Supabase: {err_msg}"}), 500
 
 
 @app.route("/update-invoice", methods=["POST"])
 def update_invoice():
-    data = request.json or {}
+    db = get_supabase()
+    if not db:
+        return jsonify({"error": "Supabase client is not configured"}), 500
 
-    inv_id = data.get("id")
-    file_name = data.get("name", "")
+    data = request.json or {}
+    inv_id = str(data.get("id", "")).strip()
+    file_name = data.get("name", "").strip()
     html_data = data.get("data", "")
 
-    update_invoice_excel(
-        inv_id,
-        file_name,
-        html_data
-    )
+    try:
+        update_payload = {"html_data": html_data}
+        if file_name:
+            update_payload["file_name"] = file_name
 
-    return jsonify({
-        "message": "Invoice updated"
-    })
+        db.table("invoices").update(update_payload).eq("invoice_id", inv_id).execute()
+
+        return jsonify({
+            "message": "Invoice updated"
+        })
+    except Exception as e:
+        err_msg = format_supabase_error(e)
+        print(f"Error updating invoice {inv_id} in Supabase: {err_msg}")
+        return jsonify({"error": f"Failed to update invoice in Supabase: {err_msg}"}), 500
+
+
+@app.route("/rename-invoice", methods=["POST"])
+def rename_invoice():
+    db = get_supabase()
+    if not db:
+        return jsonify({"error": "Supabase client is not configured"}), 500
+
+    data = request.json or {}
+    old_id = str(data.get("old_id", "")).strip()
+    new_name = data.get("new_id", "").strip()
+
+    try:
+        db.table("invoices").update({
+            "file_name": new_name
+        }).eq("invoice_id", old_id).execute()
+
+        return jsonify({
+            "message": "Renamed"
+        })
+    except Exception as e:
+        err_msg = format_supabase_error(e)
+        print(f"Error renaming invoice {old_id} in Supabase: {err_msg}")
+        return jsonify({"error": f"Failed to rename invoice in Supabase: {err_msg}"}), 500
+
+
+@app.route("/delete-invoice", methods=["POST"])
+def delete_invoice():
+    db = get_supabase()
+    if not db:
+        return jsonify({"error": "Supabase client is not configured"}), 500
+
+    data = request.json or {}
+    delete_id = str(data.get("id", "")).strip()
+
+    try:
+        db.table("invoices").delete().eq("invoice_id", delete_id).execute()
+
+        return jsonify({
+            "message": "Deleted"
+        })
+    except Exception as e:
+        err_msg = format_supabase_error(e)
+        print(f"Error deleting invoice {delete_id} from Supabase: {err_msg}")
+        return jsonify({"error": f"Failed to delete invoice from Supabase: {err_msg}"}), 500
 
 
 @app.route("/pdf-action", methods=["POST"])
@@ -228,104 +309,43 @@ def pdf_action():
     }), 400
 
 
-@app.route("/rename-invoice", methods=["POST"])
-def rename_invoice():
-    data = request.json or {}
-
-    old_id = str(data.get("old_id", ""))
-    new_id = str(data.get("new_id", ""))
-
-    ensure_excel()
-
-    wb = load_workbook(FILE_PATH)
-    ws = wb.active
-
-    for row in ws.iter_rows(min_row=2):
-        if row[0].value is not None and str(row[0].value) == old_id:
-            row[1].value = new_id
-            break
-
-    wb.save(FILE_PATH)
-
-    return jsonify({
-        "message": "Renamed"
-    })
-
-
-@app.route("/delete-invoice", methods=["POST"])
-def delete_invoice():
-    data = request.json or {}
-
-    delete_id = str(data.get("id", ""))
-
-    ensure_excel()
-
-    wb = load_workbook(FILE_PATH)
-    ws = wb.active
-
-    rows = list(ws.iter_rows(values_only=True))
-
-    new_rows = [rows[0]]
-
-    for r in rows[1:]:
-        if r and r[0] is not None and str(r[0]) == delete_id:
-            continue
-
-        new_rows.append(r)
-
-    wb.remove(ws)
-
-    ws = wb.create_sheet(title="Sheet")
-
-    for r in new_rows:
-        ws.append(r)
-
-    wb.save(FILE_PATH)
-
-    return jsonify({
-        "message": "Deleted"
-    })
-
-
 # ---------------------------------------------------------
 # START APPLICATION
 # ---------------------------------------------------------
 
 if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 5000))
+    host = os.environ.get("HOST", "127.0.0.1")
 
-    def open_browser():
-        chrome_paths = [
-            r"C:\Program Files\Google\Chrome\Application\chrome.exe",
-            r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
-            os.path.expandvars(r"%LOCALAPPDATA%\Google\Chrome\Application\chrome.exe")
-        ]
-        opened = False
-        for p in chrome_paths:
-            if os.path.exists(p):
+    # Automatically open the billing website in Chrome for local development
+    if host in ["127.0.0.1", "localhost"] and not os.environ.get("RENDER"):
+        def open_browser():
+            chrome_paths = [
+                r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+                r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+                os.path.expandvars(r"%LOCALAPPDATA%\Google\Chrome\Application\chrome.exe")
+            ]
+            opened = False
+            for p in chrome_paths:
+                if os.path.exists(p):
+                    try:
+                        webbrowser.register('chrome', None, webbrowser.BackgroundBrowser(p))
+                        webbrowser.get('chrome').open(f"http://127.0.0.1:{port}")
+                        opened = True
+                        break
+                    except Exception:
+                        pass
+            if not opened:
                 try:
-                    webbrowser.register('chrome', None, webbrowser.BackgroundBrowser(p))
-                    webbrowser.get('chrome').open("http://127.0.0.1:5000")
-                    opened = True
-                    break
+                    webbrowser.open(f"http://127.0.0.1:{port}")
                 except Exception:
                     pass
-        if not opened:
-            webbrowser.open("http://127.0.0.1:5000")
 
-    # Automatically open the billing website in Chrome
-    # after the Flask server starts.
-    threading.Timer(
-        1.5,
-        open_browser
-    ).start()
+        threading.Timer(1.5, open_browser).start()
 
-    # Production-style local startup:
-    # No Flask debugger
-    # No debugger PIN
-    # No automatic reloader
     app.run(
-        host="127.0.0.1",
-        port=5000,
+        host=host,
+        port=port,
         debug=False,
         use_reloader=False
     )
