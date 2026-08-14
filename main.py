@@ -5,8 +5,11 @@ import io
 import webbrowser
 import threading
 
-from flask import Flask, render_template, request, jsonify, send_file
+from dotenv import load_dotenv
+from flask import Flask, render_template, request, jsonify, send_file, session, redirect, url_for
 from openpyxl import Workbook, load_workbook
+
+load_dotenv()
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 EXTRACTED_DIR = os.path.join(
@@ -20,9 +23,57 @@ app = Flask(
     template_folder=os.path.join(EXTRACTED_DIR, "templates"),
     static_folder=os.path.join(EXTRACTED_DIR, "static")
 )
+app.secret_key = os.environ.get("FLASK_SECRET_KEY", "sri-traders-hari-app-secure-session-key-2026")
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax"
+)
+
+HARI_USERNAME = os.environ.get("HARI_USERNAME", "Hari")
+HARI_PASSWORD = os.environ.get("HARI_PASSWORD", "Uma@1999")
 
 FOLDER_PATH = r"C:\SRI Traders"
 FILE_PATH = os.path.join(FOLDER_PATH, "invoices.xlsx")
+
+
+@app.before_request
+def require_login():
+    # Allow login route and static files without login
+    if request.endpoint in ["login", "static"]:
+        return None
+
+    if not session.get("logged_in"):
+        if request.is_json or request.path.startswith("/get-") or request.path in ["/save", "/update-invoice", "/rename-invoice", "/delete-invoice", "/pdf-action"]:
+            return jsonify({"error": "Unauthorized"}), 401
+        return redirect(url_for("login"))
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if session.get("logged_in"):
+        return redirect(url_for("index"))
+
+    error = None
+    if request.method == "POST":
+        username = request.form.get("username", "").strip()
+        password = request.form.get("password", "").strip()
+
+        if not username or not password:
+            error = "Please enter both username and password"
+        elif username == HARI_USERNAME and password == HARI_PASSWORD:
+            session["logged_in"] = True
+            session["username"] = username
+            return redirect(url_for("index"))
+        else:
+            error = "Invalid username or password"
+
+    return render_template("login.html", error=error)
+
+
+@app.route("/logout", methods=["GET", "POST"])
+def logout():
+    session.clear()
+    return redirect(url_for("login"))
 
 
 def ensure_excel():
@@ -242,11 +293,30 @@ def delete_invoice():
 
 if __name__ == "__main__":
 
-    # Automatically open the billing website
+    def open_browser():
+        chrome_paths = [
+            r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+            r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+            os.path.expandvars(r"%LOCALAPPDATA%\Google\Chrome\Application\chrome.exe")
+        ]
+        opened = False
+        for p in chrome_paths:
+            if os.path.exists(p):
+                try:
+                    webbrowser.register('chrome', None, webbrowser.BackgroundBrowser(p))
+                    webbrowser.get('chrome').open("http://127.0.0.1:5000")
+                    opened = True
+                    break
+                except Exception:
+                    pass
+        if not opened:
+            webbrowser.open("http://127.0.0.1:5000")
+
+    # Automatically open the billing website in Chrome
     # after the Flask server starts.
     threading.Timer(
         1.5,
-        lambda: webbrowser.open("http://127.0.0.1:5000")
+        open_browser
     ).start()
 
     # Production-style local startup:

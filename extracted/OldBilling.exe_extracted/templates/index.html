@@ -622,6 +622,7 @@
         <button onclick="deleteSelectedRow()" class="primary-btn">Delete Selected Item</button>
 
         <button onclick="loadNewInvoice()" class="primary-btn">New Invoice</button>
+        <button onclick="window.location.href='/logout'" class="primary-btn" style="background: #dc3545; margin-left: auto;" title="Logout from Hari App">Logout</button>
     </div>
 
 
@@ -1231,7 +1232,7 @@
             // Remove UI-only highlight classes before html2canvas renders the invoice
             // (html2canvas captures the live DOM visually; @media print does not apply)
             const selectedRows = element.querySelectorAll(".selected-row");
-            const activeCells  = element.querySelectorAll(".active-cell");
+            const activeCells = element.querySelectorAll(".active-cell");
             selectedRows.forEach(r => r.classList.remove("selected-row"));
             activeCells.forEach(c => {
                 c.classList.remove("active-cell");
@@ -1512,7 +1513,51 @@ ${inv.name}
 
         <tr>
             <td id="cell-1" rowspan="3" colspan="2">
-                <div style="font-size: 12px;">580, SATHY ROAD, KAVINDAPADI, ERODE - 638 455<br><br>GSTIN NO : 33AEBPU1027L1ZL<br>STATE NAME : TAMILNADU &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Code : 33<br>EMAIL ID: sritraders210199@gmail.com<br> MOBILE NO : 90431 24078</div>
+                <div style="font-size: 12px; line-height: 1.35;">
+                    <div>580, SATHY ROAD, KAVINDAPADI, ERODE - 638 455</div>
+                    <div style="margin-top: 8px;">
+                        <div style="margin-top: 8px;">
+
+    <!-- GSTIN -->
+    <div style="display: grid; grid-template-columns: 105px 15px auto; align-items: baseline;">
+        <span style="font-weight: bold;">GSTIN NO</span>
+        <span style="font-weight: bold; text-align: center;">:</span>
+        <span>33AEBPU1027L1ZL</span>
+    </div>
+
+    <!-- STATE + CODE -->
+    <div style="display: flex; align-items: baseline; justify-content: space-between;">
+        
+        <div style="display: grid; grid-template-columns: 105px 15px auto; align-items: baseline;">
+            <span style="font-weight: bold;">STATE NAME</span>
+            <span style="font-weight: bold; text-align: center;">:</span>
+            <span>TAMILNADU</span>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 35px 15px 20px; align-items: baseline; margin-right: 15px;">
+            <span style="font-weight: bold;">Code</span>
+            <span style="font-weight: bold; text-align: center;">:</span>
+            <span>33</span>
+        </div>
+
+    </div>
+
+    <!-- EMAIL -->
+    <div style="display: grid; grid-template-columns: 105px 15px auto; align-items: baseline;">
+        <span style="font-weight: bold;">EMAIL ID</span>
+        <span style="font-weight: bold; text-align: center;">:</span>
+        <span>sritraders210199@gmail.com</span>
+    </div>
+
+    <!-- MOBILE -->
+    <div style="display: grid; grid-template-columns: 105px 15px auto; align-items: baseline;">
+        <span style="font-weight: bold;">MOBILE NO</span>
+        <span style="font-weight: bold; text-align: center;">:</span>
+        <span>90431 24078</span>
+    </div>
+
+</div>
+</div>
             </td>
             <td id="cell-3">
                 <div style="font-size: 10px;">Invoice No</div><div style="font-weight: bolder;font-size: 11px;padding-top: 3px;" contenteditable="true" id="invoiceNo"></div>
@@ -1645,11 +1690,30 @@ ${inv.name}
             </tr>
 
             <tr>
-                <td colspan="16" contenteditable="true">
-                    <div style="padding: 3px;"><span contenteditable="false" style="font-weight: bold;">Account Number &nbsp; : &nbsp;&nbsp;</span></div>
-                    <div style="padding: 3px;"><span contenteditable="false" style="font-weight: bold;">Bank &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; : &nbsp;&nbsp;</span></div>
-                    <div style="padding: 3px;"><span contenteditable="false" style="font-weight: bold;">Branch &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; : &nbsp;&nbsp;</span></div>
-                    <div style="padding: 3px;"><span contenteditable="false" style="font-weight: bold;">IFSC Code &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; : &nbsp;&nbsp;</span></div>
+                <td colspan="16">
+                    <div style="padding: 3px; line-height: 1.4; display: grid; grid-template-columns: 110px 15px auto; align-items: baseline;">
+                        <span contenteditable="false" style="font-weight: bold;">Account Number</span>
+                        <span contenteditable="false" style="font-weight: bold; text-align: center;">:</span>
+                        <span contenteditable="true" style="outline: none; padding-left: 4px; min-height: 14px; display: inline-block;"></span>
+                    </div>
+
+                    <div style="padding: 3px; line-height: 1.4; display: grid; grid-template-columns: 110px 15px auto; align-items: baseline;">
+                        <span contenteditable="false" style="font-weight: bold;">Bank</span>
+                        <span contenteditable="false" style="font-weight: bold; text-align: center;">:</span>
+                        <span contenteditable="true" style="outline: none; padding-left: 4px; min-height: 14px; display: inline-block;"></span>
+                    </div>
+
+                    <div style="padding: 3px; line-height: 1.4; display: grid; grid-template-columns: 110px 15px auto; align-items: baseline;">
+                        <span contenteditable="false" style="font-weight: bold;">Branch</span>
+                        <span contenteditable="false" style="font-weight: bold; text-align: center;">:</span>
+                        <span contenteditable="true" style="outline: none; padding-left: 4px; min-height: 14px; display: inline-block;"></span>
+                    </div>
+
+                    <div style="padding: 3px; line-height: 1.4; display: grid; grid-template-columns: 110px 15px auto; align-items: baseline;">
+                        <span contenteditable="false" style="font-weight: bold;">IFSC Code</span>
+                        <span contenteditable="false" style="font-weight: bold; text-align: center;">:</span>
+                        <span contenteditable="true" style="outline: none; padding-left: 4px; min-height: 14px; display: inline-block;"></span>
+                    </div>
                 </td>
             </tr>
             
