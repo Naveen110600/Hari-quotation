@@ -1,0 +1,1760 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>SRI TRADERS</title>
+    <link rel="icon" href="{{ url_for('static', filename='icon.jpeg') }}" type="image/jpeg">
+    <style>
+        body {
+            background: #ccc;
+            display: flex;
+            justify-content: center;
+            padding: 20px;
+            margin-top: 60px;
+            font-family: Arial, sans-serif;
+        }
+
+        #a4 {
+            position: relative;
+            /* required */
+            background: white;
+            padding: 15mm;
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Portrait */
+        .a4-portrait {
+            width: 210mm;
+            height: calc(297mm - 0.5mm);
+        }
+
+        /* Landscape */
+        .a4-landscape {
+            width: 297mm;
+            height: 210mm;
+        }
+
+
+        /* ===== MAIN LAYOUT TABLE ===== */
+        .invoice-table {
+            width: 100%;
+            height: 100%;
+            border-collapse: collapse;
+            table-layout: fixed;
+        }
+
+        .invoice-table td {
+            padding: 0;
+            border: none;
+            vertical-align: top;
+        }
+
+        .invoice-table tr:first-child {
+            height: auto;
+        }
+
+        .invoice-table tr:last-child {
+            height: 100%;
+        }
+
+
+        /* ===== TOP TABLE ===== */
+        .top-table {
+            width: 100%;
+            border-collapse: collapse;
+            table-layout: fixed;
+        }
+
+        .top-table td {
+            border: 1px solid black;
+            padding: 3px 5px;
+            vertical-align: top;
+            font-size: 11px;
+            min-height: 40px;
+        }
+
+        /* 50% left / 50% right */
+        .top-table col {
+            width: 25%;
+        }
+
+        /* ===== BODY TABLE ===== */
+        .body-table {
+            width: 100%;
+            height: 100%;
+            border: 1px solid black;
+            border-collapse: collapse;
+            table-layout: fixed;
+            font-size: 11px;
+        }
+
+        /* Vertical borders only */
+        .body-table th,
+        .body-table td {
+            border-left: 1px solid black;
+            border-right: 1px solid black;
+        }
+
+
+        /* Header bottom border */
+        .body-table thead th {
+            border-bottom: 1px solid black;
+            font-size: 11px;
+            padding: 3px 0px;
+        }
+
+        /* Remove internal horizontal lines */
+        .body-table tbody td {
+            font-size: 10px;
+            border-top: none;
+            border-bottom: none;
+            padding: 5px 3px;
+            /* spacing between rows */
+        }
+
+        /* Footer top border */
+        .body-table tfoot td {
+            font-size: 10px;
+            border-top: 1px solid black;
+            padding: 3px;
+        }
+
+        /* Editable cells */
+        [contenteditable="true"] {
+            outline: none;
+        }
+
+        @media print {
+            body {
+                background: none;
+                margin: 0;
+            }
+
+            #a4 {
+                margin: 0;
+            }
+
+            button {
+                display: none !important;
+            }
+
+            .active-cell,
+            .pdf-mode .active-cell {
+                outline: none !important;
+                background: #fff !important;
+                background-color: #fff !important;
+            }
+
+            .invoice-table tr,
+            .invoice-table td,
+            .body-table tr,
+            .body-table td,
+            #invoice-body tr,
+            #invoice-body td,
+            .selected-row,
+            .selected-row td {
+                background: #fff !important;
+                background-color: #fff !important;
+            }
+        }
+
+        .pdf-mode .active-cell {
+            outline: none !important;
+            background: #fff !important;
+            background-color: #fff !important;
+        }
+
+        .pdf-mode .invoice-table tr,
+        .pdf-mode .invoice-table td,
+        .pdf-mode .body-table tr,
+        .pdf-mode .body-table td,
+        .pdf-mode #invoice-body tr,
+        .pdf-mode #invoice-body td,
+        .pdf-mode .selected-row,
+        .pdf-mode .selected-row td {
+            background: #fff !important;
+            background-color: #fff !important;
+        }
+
+        #editor-toolbar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            background: #f4f4f4;
+            padding: 8px;
+            display: flex;
+            gap: 5px;
+            z-index: 1000;
+            border-bottom: 1px solid #ccc;
+        }
+
+        .selected-row td {
+            background-color: #e5fcff;
+        }
+
+        .active-cell {
+            outline: 2px solid #009c05;
+            outline-offset: -2px;
+        }
+
+        .calc-cell {
+            white-space: normal !important;
+            word-break: break-word;
+            overflow-wrap: break-word;
+        }
+
+
+        .watermark {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+
+            width: 750px;
+            height: 750px;
+
+            background: url("{{ url_for('static', filename='icon.jpeg') }}") no-repeat center;
+            background-size: contain;
+
+            transform: translate(-50%, -50%);
+            /* 🔒 physical center lock */
+            opacity: 0.05;
+            pointer-events: none;
+            z-index: 0;
+        }
+
+
+
+
+
+
+        .primary-btn {
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        .primary-btn:hover {
+            background: #0056b3;
+        }
+
+
+        .sidebar {
+            background: #f4f4f4;
+            border-right: 1px solid #ccc;
+            height: calc(297mm - 0.5mm);
+            overflow-y: auto;
+            overflow-x: scroll;
+            max-width: 100mm;
+            padding: 0px 10px;
+        }
+
+        .editor {
+            flex: 1;
+            overflow: auto;
+            padding-left: 10px;
+        }
+
+        .invoice-item {
+            display: flex;
+            align-items: center;
+            padding: 8px 12px;
+            border-bottom: 1px solid #ddd;
+        }
+
+        .invoice-id {
+            flex: 1;
+            /* occupies remaining width */
+            cursor: pointer;
+        }
+
+        .right-actions {
+            display: flex;
+            gap: 10px;
+        }
+
+        .icon-btn {
+            cursor: pointer;
+        }
+
+        .invoice-item:hover {
+            background: #e8e8e8;
+        }
+
+        .date-header {
+            font-size: 12px;
+            font-weight: bold;
+            color: #666;
+            margin-top: 10px;
+            margin-bottom: 4px;
+            text-align: center;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="editor-toolbar">
+        <div style="font-family:Brush Script MT;font-weight: 800;font-size: x-large;margin-right: 30px;color: #005703;">
+            Sri Traders</div>
+        <select onchange="formatText('fontName', this.value)">
+            <option value="Arial" style="font-family:Arial">Arial</option>
+            <option value="Arial Black" style="font-family:Arial Black">Arial Black</option>
+            <option value="Verdana" style="font-family:Verdana">Verdana</option>
+            <option value="Tahoma" style="font-family:Tahoma">Tahoma</option>
+            <option value="Trebuchet MS" style="font-family:Trebuchet MS">Trebuchet MS</option>
+            <option value="Times New Roman" style="font-family:Times New Roman">Times New Roman</option>
+            <option value="Georgia" style="font-family:Georgia">Georgia</option>
+            <option value="Garamond" style="font-family:Garamond">Garamond</option>
+            <option value="Courier New" style="font-family:Courier New">Courier New</option>
+            <option value="Brush Script MT" style="font-family:Brush Script MT">Brush Script MT</option>
+            <option value="Segoe UI" style="font-family:Segoe UI">Segoe UI</option>
+            <option value="Segoe UI Variable" style="font-family:Segoe UI Variable">Segoe UI Variable</option>
+            <option value="Calibri" style="font-family:Calibri">Calibri</option>
+            <option value="Cambria" style="font-family:Cambria">Cambria</option>
+            <option value="Candara" style="font-family:Candara">Candara</option>
+            <option value="Consolas" style="font-family:Consolas">Consolas</option>
+            <option value="Lucida Console" style="font-family:Lucida Console">Lucida Console</option>
+            <option value="Lucida Sans" style="font-family:Lucida Sans">Lucida Sans</option>
+            <option value="Palatino Linotype" style="font-family:Palatino Linotype">Palatino Linotype</option>
+            <option value="Book Antiqua" style="font-family:Book Antiqua">Book Antiqua</option>
+            <option value="MS Sans Serif" style="font-family:MS Sans Serif">MS Sans Serif</option>
+            <option value="MS Serif" style="font-family:MS Serif">MS Serif</option>
+            <option value="Impact" style="font-family:Impact">Impact</option>
+            <option value="Comic Sans MS" style="font-family:Comic Sans MS">Comic Sans MS</option>
+            <option value="Optima" style="font-family:Optima">Optima</option>
+            <option value="Didot" style="font-family:Didot">Didot</option>
+            <option value="American Typewriter" style="font-family:American Typewriter">American Typewriter</option>
+            <option value="Baskerville" style="font-family:Baskerville">Baskerville</option>
+            <option value="Copperplate" style="font-family:Copperplate">Copperplate</option>
+            <option value="Inter" style="font-family:Inter">Inter</option>
+            <option value="Roboto" style="font-family:Roboto">Roboto</option>
+            <option value="Open Sans" style="font-family:Open Sans">Open Sans</option>
+            <option value="Lato" style="font-family:Lato">Lato</option>
+            <option value="Montserrat" style="font-family:Montserrat">Montserrat</option>
+            <option value="Poppins" style="font-family:Poppins">Poppins</option>
+            <option value="Nunito" style="font-family:Nunito">Nunito</option>
+            <option value="Raleway" style="font-family:Raleway">Raleway</option>
+            <option value="Source Sans Pro" style="font-family:Source Sans Pro">Source Sans Pro</option>
+            <option value="Work Sans" style="font-family:Work Sans">Work Sans</option>
+            <option value="Ubuntu" style="font-family:Ubuntu">Ubuntu</option>
+            <option value="Fira Sans" style="font-family:Fira Sans">Fira Sans</option>
+            <option value="DM Sans" style="font-family:DM Sans">DM Sans</option>
+            <option value="Manrope" style="font-family:Manrope">Manrope</option>
+            <option value="Rubik" style="font-family:Rubik">Rubik</option>
+            <option value="Mulish" style="font-family:Mulish">Mulish</option>
+            <option value="Noto Sans" style="font-family:Noto Sans">Noto Sans</option>
+            <option value="Heebo" style="font-family:Heebo">Heebo</option>
+            <option value="Karla" style="font-family:Karla">Karla</option>
+            <option value="Asap" style="font-family:Asap">Asap</option>
+            <option value="Cabin" style="font-family:Cabin">Cabin</option>
+            <option value="Arimo" style="font-family:Arimo">Arimo</option>
+            <option value="Hind" style="font-family:Hind">Hind</option>
+            <option value="Prompt" style="font-family:Prompt">Prompt</option>
+            <option value="Exo" style="font-family:Exo">Exo</option>
+            <option value="Exo 2" style="font-family:Exo 2">Exo 2</option>
+            <option value="Varela Round" style="font-family:Varela Round">Varela Round</option>
+            <option value="Questrial" style="font-family:Questrial">Questrial</option>
+            <option value="Oxygen" style="font-family:Oxygen">Oxygen</option>
+            <option value="Catamaran" style="font-family:Catamaran">Catamaran</option>
+            <option value="Merriweather" style="font-family:Merriweather">Merriweather</option>
+            <option value="Playfair Display" style="font-family:Playfair Display">Playfair Display</option>
+            <option value="Libre Baskerville" style="font-family:Libre Baskerville">Libre Baskerville</option>
+            <option value="Crimson Text" style="font-family:Crimson Text">Crimson Text</option>
+            <option value="PT Serif" style="font-family:PT Serif">PT Serif</option>
+            <option value="EB Garamond" style="font-family:EB Garamond">EB Garamond</option>
+            <option value="Cormorant" style="font-family:Cormorant">Cormorant</option>
+            <option value="Spectral" style="font-family:Spectral">Spectral</option>
+            <option value="Noto Serif" style="font-family:Noto Serif">Noto Serif</option>
+            <option value="Alegreya" style="font-family:Alegreya">Alegreya</option>
+            <option value="Domine" style="font-family:Domine">Domine</option>
+            <option value="Arvo" style="font-family:Arvo">Arvo</option>
+            <option value="Bitter" style="font-family:Bitter">Bitter</option>
+            <option value="Lora" style="font-family:Lora">Lora</option>
+            <option value="Zilla Slab" style="font-family:Zilla Slab">Zilla Slab</option>
+            <option value="Old Standard TT" style="font-family:Old Standard TT">Old Standard TT</option>
+            <option value="JetBrains Mono" style="font-family:JetBrains Mono">JetBrains Mono</option>
+            <option value="Fira Code" style="font-family:Fira Code">Fira Code</option>
+            <option value="Source Code Pro" style="font-family:Source Code Pro">Source Code Pro</option>
+            <option value="IBM Plex Mono" style="font-family:IBM Plex Mono">IBM Plex Mono</option>
+            <option value="Space Mono" style="font-family:Space Mono">Space Mono</option>
+            <option value="Inconsolata" style="font-family:Inconsolata">Inconsolata</option>
+            <option value="Roboto Mono" style="font-family:Roboto Mono">Roboto Mono</option>
+            <option value="Anonymous Pro" style="font-family:Anonymous Pro">Anonymous Pro</option>
+            <option value="Overpass Mono" style="font-family:Overpass Mono">Overpass Mono</option>
+            <option value="Courier Prime" style="font-family:Courier Prime">Courier Prime</option>
+            <option value="Victor Mono" style="font-family:Victor Mono">Victor Mono</option>
+            <option value="Ubuntu Mono" style="font-family:Ubuntu Mono">Ubuntu Mono</option>
+            <option value="Oswald" style="font-family:Oswald">Oswald</option>
+            <option value="Bebas Neue" style="font-family:Bebas Neue">Bebas Neue</option>
+            <option value="Anton" style="font-family:Anton">Anton</option>
+            <option value="Abril Fatface" style="font-family:Abril Fatface">Abril Fatface</option>
+            <option value="Cinzel" style="font-family:Cinzel">Cinzel</option>
+            <option value="Alfa Slab One" style="font-family:Alfa Slab One">Alfa Slab One</option>
+            <option value="Archivo Black" style="font-family:Archivo Black">Archivo Black</option>
+            <option value="Permanent Marker" style="font-family:Permanent Marker">Permanent Marker</option>
+            <option value="Pacifico" style="font-family:Pacifico">Pacifico</option>
+            <option value="Lobster" style="font-family:Lobster">Lobster</option>
+            <option value="Righteous" style="font-family:Righteous">Righteous</option>
+            <option value="Fredoka" style="font-family:Fredoka">Fredoka</option>
+            <option value="Baloo 2" style="font-family:Baloo 2">Baloo 2</option>
+            <option value="Paytone One" style="font-family:Paytone One">Paytone One</option>
+            <option value="Luckiest Guy" style="font-family:Luckiest Guy">Luckiest Guy</option>
+            <option value="Monoton" style="font-family:Monoton">Monoton</option>
+            <option value="Shrikhand" style="font-family:Shrikhand">Shrikhand</option>
+            <option value="Caveat" style="font-family:Caveat">Caveat</option>
+            <option value="Indie Flower" style="font-family:Indie Flower">Indie Flower</option>
+            <option value="Dancing Script" style="font-family:Dancing Script">Dancing Script</option>
+            <option value="Shadows Into Light" style="font-family:Shadows Into Light">Shadows Into Light</option>
+            <option value="Patrick Hand" style="font-family:Patrick Hand">Patrick Hand</option>
+            <option value="Handlee" style="font-family:Handlee">Handlee</option>
+            <option value="Gloria Hallelujah" style="font-family:Gloria Hallelujah">Gloria Hallelujah</option>
+            <option value="Satisfy" style="font-family:Satisfy">Satisfy</option>
+            <option value="Kalam" style="font-family:Kalam">Kalam</option>
+            <option value="Sacramento" style="font-family:Sacramento">Sacramento</option>
+            <option value="Barlow Condensed" style="font-family:Barlow Condensed">Barlow Condensed</option>
+            <option value="Roboto Condensed" style="font-family:Roboto Condensed">Roboto Condensed</option>
+            <option value="PT Sans Narrow" style="font-family:PT Sans Narrow">PT Sans Narrow</option>
+            <option value="Yanone Kaffeesatz" style="font-family:Yanone Kaffeesatz">Yanone Kaffeesatz</option>
+            <option value="Archivo Narrow" style="font-family:Archivo Narrow">Archivo Narrow</option>
+            <option value="Fjalla One" style="font-family:Fjalla One">Fjalla One</option>
+            <option value="Orbitron" style="font-family:Orbitron">Orbitron</option>
+            <option value="Rajdhani" style="font-family:Rajdhani">Rajdhani</option>
+            <option value="Audiowide" style="font-family:Audiowide">Audiowide</option>
+            <option value="Quantico" style="font-family:Quantico">Quantico</option>
+            <option value="Chakra Petch" style="font-family:Chakra Petch">Chakra Petch</option>
+            <option value="Space Grotesk" style="font-family:Space Grotesk">Space Grotesk</option>
+            <option value="Noto Sans JP" style="font-family:Noto Sans JP">Noto Sans JP</option>
+            <option value="Noto Sans KR" style="font-family:Noto Sans KR">Noto Sans KR</option>
+            <option value="Noto Sans TC" style="font-family:Noto Sans TC">Noto Sans TC</option>
+            <option value="Noto Sans Arabic" style="font-family:Noto Sans Arabic">Noto Sans Arabic</option>
+            <option value="Noto Sans Devanagari" style="font-family:Noto Sans Devanagari">Noto Sans Devanagari</option>
+            <option value="Mukta" style="font-family:Mukta">Mukta</option>
+            <option value="Tiro Devanagari Hindi" style="font-family:Tiro Devanagari Hindi">Tiro Devanagari Hindi
+            </option>
+            <option value="Baloo Tamma" style="font-family:Baloo Tamma">Baloo Tamma</option>
+            <option value="Hind Madurai" style="font-family:Hind Madurai">Hind Madurai</option>
+            <option value="Cormorant Infant" style="font-family:Cormorant Infant">Cormorant Infant</option>
+            <option value="Unica One" style="font-family:Unica One">Unica One</option>
+            <option value="Poiret One" style="font-family:Poiret One">Poiret One</option>
+            <option value="Josefin Sans" style="font-family:Josefin Sans">Josefin Sans</option>
+            <option value="Assistant" style="font-family:Assistant">Assistant</option>
+            <option value="M PLUS 1" style="font-family:M PLUS 1">M PLUS 1</option>
+            <option value="Public Sans" style="font-family:Public Sans">Public Sans</option>
+            <option value="Red Hat Display" style="font-family:Red Hat Display">Red Hat Display</option>
+            <option value="Spline Sans" style="font-family:Spline Sans">Spline Sans</option>
+        </select>
+
+        <select onchange="setFontSize(this.value)">
+            <option value="1px">1</option>
+            <option value="2px">2</option>
+            <option value="3px">3</option>
+            <option value="4px">4</option>
+            <option value="5px">5</option>
+            <option value="6px">6</option>
+            <option value="7px">7</option>
+            <option value="8px">8</option>
+            <option value="9px">9</option>
+            <option value="10px">10</option>
+            <option value="11px">11</option>
+            <option value="12px">12</option>
+            <option value="13px">13</option>
+            <option value="14px">14</option>
+            <option value="15px">15</option>
+            <option value="16px">16</option>
+            <option value="17px">17</option>
+            <option value="18px">18</option>
+            <option value="19px">19</option>
+            <option value="20px">20</option>
+            <option value="21px">21</option>
+            <option value="22px">22</option>
+            <option value="23px">23</option>
+            <option value="24px">24</option>
+            <option value="25px">25</option>
+            <option value="26px">26</option>
+            <option value="27px">27</option>
+            <option value="28px">28</option>
+            <option value="29px">29</option>
+            <option value="30px">30</option>
+            <option value="31px">31</option>
+            <option value="32px">32</option>
+            <option value="33px">33</option>
+            <option value="34px">34</option>
+            <option value="35px">35</option>
+            <option value="36px">36</option>
+            <option value="37px">37</option>
+            <option value="38px">38</option>
+            <option value="39px">39</option>
+            <option value="40px">40</option>
+            <option value="41px">41</option>
+            <option value="42px">42</option>
+            <option value="43px">43</option>
+            <option value="44px">44</option>
+            <option value="45px">45</option>
+            <option value="46px">46</option>
+            <option value="47px">47</option>
+            <option value="48px">48</option>
+            <option value="49px">49</option>
+            <option value="50px">50</option>
+            <option value="51px">51</option>
+            <option value="52px">52</option>
+            <option value="53px">53</option>
+            <option value="54px">54</option>
+            <option value="55px">55</option>
+            <option value="56px">56</option>
+            <option value="57px">57</option>
+            <option value="58px">58</option>
+            <option value="59px">59</option>
+            <option value="60px">60</option>
+            <option value="61px">61</option>
+            <option value="62px">62</option>
+            <option value="63px">63</option>
+            <option value="64px">64</option>
+            <option value="65px">65</option>
+            <option value="66px">66</option>
+            <option value="67px">67</option>
+            <option value="68px">68</option>
+            <option value="69px">69</option>
+            <option value="70px">70</option>
+            <option value="71px">71</option>
+            <option value="72px">72</option>
+            <option value="73px">73</option>
+            <option value="74px">74</option>
+            <option value="75px">75</option>
+            <option value="76px">76</option>
+            <option value="77px">77</option>
+            <option value="78px">78</option>
+            <option value="79px">79</option>
+            <option value="80px">80</option>
+            <option value="81px">81</option>
+            <option value="82px">82</option>
+            <option value="83px">83</option>
+            <option value="84px">84</option>
+            <option value="85px">85</option>
+            <option value="86px">86</option>
+            <option value="87px">87</option>
+            <option value="88px">88</option>
+            <option value="89px">89</option>
+            <option value="90px">90</option>
+            <option value="91px">91</option>
+            <option value="92px">92</option>
+            <option value="93px">93</option>
+            <option value="94px">94</option>
+            <option value="95px">95</option>
+            <option value="96px">96</option>
+            <option value="97px">97</option>
+            <option value="98px">98</option>
+            <option value="99px">99</option>
+            <option value="100px">100</option>
+            <option value="101px">101</option>
+            <option value="102px">102</option>
+            <option value="103px">103</option>
+            <option value="104px">104</option>
+            <option value="105px">105</option>
+            <option value="106px">106</option>
+            <option value="107px">107</option>
+            <option value="108px">108</option>
+            <option value="109px">109</option>
+            <option value="110px">110</option>
+            <option value="111px">111</option>
+            <option value="112px">112</option>
+            <option value="113px">113</option>
+            <option value="114px">114</option>
+            <option value="115px">115</option>
+            <option value="116px">116</option>
+            <option value="117px">117</option>
+            <option value="118px">118</option>
+            <option value="119px">119</option>
+            <option value="120px">120</option>
+            <option value="121px">121</option>
+            <option value="122px">122</option>
+            <option value="123px">123</option>
+            <option value="124px">124</option>
+            <option value="125px">125</option>
+            <option value="126px">126</option>
+            <option value="127px">127</option>
+            <option value="128px">128</option>
+            <option value="129px">129</option>
+            <option value="130px">130</option>
+            <option value="131px">131</option>
+            <option value="132px">132</option>
+            <option value="133px">133</option>
+            <option value="134px">134</option>
+            <option value="135px">135</option>
+            <option value="136px">136</option>
+            <option value="137px">137</option>
+            <option value="138px">138</option>
+            <option value="139px">139</option>
+            <option value="140px">140</option>
+            <option value="141px">141</option>
+            <option value="142px">142</option>
+            <option value="143px">143</option>
+            <option value="144px">144</option>
+            <option value="145px">145</option>
+            <option value="146px">146</option>
+            <option value="147px">147</option>
+            <option value="148px">148</option>
+            <option value="149px">149</option>
+            <option value="150px">150</option>
+        </select>
+
+
+        <button onclick="formatText('bold')"><b>B</b></button>
+        <button onclick="formatText('italic')"><i>I</i></button>
+        <button onclick="formatText('underline')"><u>U</u></button>
+
+        <input type="color" id="colorPicker">
+
+        <button onclick="saveData()" class="primary-btn">Save</button>
+        <button onclick="printPage()" class="primary-btn">Print</button>
+        <!--
+    
+    <button onclick="downloadPDF()" class="primary-btn" >Download PDF</button>
+    <button onclick="sharePDF()" class="primary-btn" >Share</button>
+    
+    -->
+
+        <button onclick="addRow()" class="primary-btn">Add New Item</button>
+        <button onclick="deleteSelectedRow()" class="primary-btn">Delete Selected Item</button>
+
+        <button onclick="loadNewInvoice()" class="primary-btn">New Invoice</button>
+    </div>
+
+
+    <div class="sidebar">
+
+        <h3>Saved - Invoices</h3>
+        <input type="text" id="invoiceSearch" placeholder="Search invoices..." style="width: 100%;"
+            oninput="searchInvoices()">
+
+        <div id="invoice-list"></div>
+
+    </div>
+
+    <div class="editor">
+
+
+        <div id="a4" class="a4-portrait">
+        </div>
+
+    </div>
+
+
+    <script src="{{ url_for('static', filename='module.js') }}"></script>
+    <script>
+
+        let currentInvoiceId = null;
+        let currentFileName = null;
+
+        let activeCell = null;
+        let savedSelection = null;
+        // Save selection whenever user selects text
+        document.addEventListener("selectionchange", function () {
+
+            const sel = window.getSelection();
+            if (!sel.rangeCount) return;
+
+            savedSelection = sel.getRangeAt(0);
+
+            // 🔒 Only format OTHER cells, never the active one
+            if (activeCell) {
+                formatInvoiceCells(activeCell);
+            }
+        });
+
+        const colorPicker = document.getElementById("colorPicker");
+        colorPicker.addEventListener("input", function () {
+
+            if (!savedSelection) return;
+
+            const selection = window.getSelection();
+            selection.removeAllRanges();
+            selection.addRange(savedSelection);
+
+            document.execCommand("styleWithCSS", false, true);
+            document.execCommand("foreColor", false, this.value);
+        });
+
+        function formattedDate() {
+
+            const today = new Date();
+
+            const day = String(today.getDate()).padStart(2, '0');
+            const month = String(today.getMonth() + 1).padStart(2, '0');
+            const year = today.getFullYear();
+
+            const formattedDate = `${day}/${month}/${year}`;
+            return formattedDate;
+        }
+        document.addEventListener("DOMContentLoaded", function () {
+
+            loadNewInvoice();   // load blank invoice on page load
+            loadInvoiceList();
+
+        });
+
+        //drag logic
+        let draggedRow = null;
+        document.addEventListener("dragstart", function (e) {
+
+            const row = e.target.closest("#invoice-body tr");
+            if (!row) return;
+
+            if (row.id === "filler-row") return;
+
+            draggedRow = row;
+            row.style.opacity = "0.5";
+        });
+
+        document.addEventListener("dragend", function (e) {
+            if (draggedRow) {
+                draggedRow.style.opacity = "1";
+            }
+        });
+
+        document.addEventListener("dragover", function (e) {
+            e.preventDefault();
+        });
+
+        document.addEventListener("drop", function (e) {
+
+            e.preventDefault();
+
+            const tbody = document.getElementById("invoice-body");
+            const targetRow = e.target.closest("#invoice-body tr");
+
+            if (!draggedRow) return;
+
+            // If dropping on filler row → insert before it
+            if (targetRow && targetRow.id === "filler-row") {
+                tbody.insertBefore(draggedRow, targetRow);
+                reNumberRows();
+                return;
+            }
+
+            // If dropping on a normal row
+            if (targetRow && targetRow !== draggedRow) {
+                tbody.insertBefore(draggedRow, targetRow);
+                reNumberRows();
+            }
+
+        });
+
+        function addRow() {
+
+            const tbody = document.getElementById("invoice-body");
+            const fillerRow = document.getElementById("filler-row");
+
+            const rowCount = tbody.querySelectorAll("tr:not(#filler-row)").length + 1;
+
+            const newRow = document.createElement("tr");
+            newRow.setAttribute("draggable", "true");
+
+            newRow.innerHTML = `
+<td class="serial-cell">${rowCount}</td>
+<td contenteditable="true" data-field="product_name" colspan="8" style="font-weight: bold;"></td>
+<td contenteditable="true" data-field="hsn_code"></td>
+<td contenteditable="true" data-field="quantity" style="font-weight: bold;text-align: right;"></td>
+<td contenteditable="true" data-field="rate" colspan="2" style="font-weight: bold;text-align: right;"></td>
+<td contenteditable="true" data-field="gst"></td>
+<td data-field="amount" colspan="2" class="calc-cell" style="font-weight: bold;text-align: right;"></td>
+    `;
+
+            tbody.insertBefore(newRow, fillerRow);
+        }
+
+        function calculateRow(row) {
+
+            const get = field => {
+                const cell = row.querySelector(`[data-field="${field}"]`);
+                return cell ? parseFloat(cell.innerText) || 0 : 0;
+            };
+
+            const set = (field, value) => {
+                const cell = row.querySelector(`[data-field="${field}"]`);
+                if (cell) cell.innerText = value.toFixed(2);
+            };
+
+            const quantity = get("quantity");
+            const rate = get("rate");
+
+            const amount = quantity * rate;
+            set("amount", amount);
+        }
+
+        document.addEventListener("input", function (e) {
+
+            const cell = e.target.closest("#invoice-body td[contenteditable='true']");
+            if (!cell) return;
+
+            const row = cell.closest("tr");
+            if (!row || row.id === "filler-row") return;
+
+            calculateRow(row);
+            calculateGst();
+            calculateGrandTotal();
+            formatInvoiceCells(cell);   // skip active
+
+        });
+        document.addEventListener("blur", e => {
+            const cell = e.target.closest("#invoice-body td[contenteditable='true']");
+            if (!cell) return;
+
+            activeCell = null;
+            formatInvoiceCells();       // force formatting
+        }, true);
+
+        function calculateGst() {
+
+            const rows = document.querySelectorAll("#invoice-body tr");
+            const gstMap = {};
+
+            // 1️⃣ Collect & group by GST % + HSN
+            rows.forEach(row => {
+
+                const amountCell = row.querySelector('[data-field="amount"]');
+                const gstCell = row.querySelector('[data-field="gst"]');
+                const hsnCell = row.querySelector('[data-field="hsn_code"]'); // ✅ FIXED
+
+                if (!amountCell || !gstCell) return;
+
+                const amount = parseFloat(amountCell.innerText) || 0;
+                const gstPercent = parseFloat(gstCell.innerText) || 0;
+                const hsn = hsnCell ? hsnCell.innerText.trim() : "";
+
+                if (gstPercent <= 0) return;
+
+                if (!gstMap[gstPercent]) {
+                    gstMap[gstPercent] = {
+                        taxable: 0,
+                        hsnSet: new Set()
+                    };
+                }
+
+                gstMap[gstPercent].taxable += amount;
+
+                if (hsn !== "") {
+                    gstMap[gstPercent].hsnSet.add(hsn);
+                }
+
+            });
+
+            const tfoot = document.querySelector("tfoot");
+            const totalRow = document.getElementById("gst-total-row");
+
+            // 2️⃣ Remove old dynamic rows
+            tfoot.querySelectorAll(".dynamic-gst-row").forEach(row => row.remove());
+
+            let totalTaxable = 0;
+            let totalSgst = 0;
+            let totalCgst = 0;
+            let totalTax = 0;
+
+            // 3️⃣ Insert GST rows before total row
+            Object.keys(gstMap).forEach(gstPercent => {
+
+                const taxable = gstMap[gstPercent].taxable;
+                const hsnCodes = Array.from(gstMap[gstPercent].hsnSet).join(", ");
+
+                const gstAmount = taxable * gstPercent / 100;
+                const sgst = gstAmount / 2;
+                const cgst = gstAmount / 2;
+
+                totalTaxable += taxable;
+                totalSgst += sgst;
+                totalCgst += cgst;
+                totalTax += gstAmount;
+
+                const row = document.createElement("tr");
+                row.classList.add("dynamic-gst-row");
+
+                row.innerHTML = `
+            <td colspan="2" style="text-align:right;">${hsnCodes}</td>
+            <td colspan="3" style="text-align:right;">${taxable.toFixed(2)}</td>
+
+            <td colspan="2" style="text-align:right;">${(gstPercent / 2).toFixed(2)}%</td>
+            <td colspan="2" style="text-align:right;">${sgst.toFixed(2)}</td>
+
+            <td colspan="2" style="text-align:right;">${(gstPercent / 2).toFixed(2)}%</td>
+            <td colspan="2" style="text-align:right;">${cgst.toFixed(2)}</td>
+
+            <td colspan="3" style="text-align:right;">${gstAmount.toFixed(2)}</td>
+        `;
+
+                tfoot.insertBefore(row, totalRow);
+
+            });
+
+            // 4️⃣ Update total row
+            const cells = totalRow.querySelectorAll("td");
+
+            cells[1].innerText = totalTaxable.toFixed(2);
+            cells[3].innerText = totalSgst.toFixed(2);
+            cells[5].innerText = totalCgst.toFixed(2);
+            cells[6].innerText = totalTax.toFixed(2);
+        }
+
+        function renderGSTSummary(gstMap) {
+
+            const tbody = document.getElementById("gst-summary-body");
+            tbody.innerHTML = "";
+
+            let totalTaxable = 0;
+            let totalSGST = 0;
+            let totalCGST = 0;
+            let totalTax = 0;
+
+            for (let rate in gstMap) {
+
+                const taxable = gstMap[rate].taxable;
+                const sgstRate = rate / 2;
+                const cgstRate = rate / 2;
+
+                const sgstAmount = taxable * sgstRate / 100;
+                const cgstAmount = taxable * cgstRate / 100;
+
+                const totalRowTax = sgstAmount + cgstAmount;
+
+                totalTaxable += taxable;
+                totalSGST += sgstAmount;
+                totalCGST += cgstAmount;
+                totalTax += totalRowTax;
+
+                const row = `
+        <tr>
+            <td colspan="2" style="text-align:center;">${rate}%</td>
+            <td colspan="3" style="text-align:right;">${taxable.toFixed(2)}</td>
+            <td colspan="2" style="text-align:right;">${sgstRate}%</td>
+            <td colspan="2" style="text-align:right;">${sgstAmount.toFixed(2)}</td>
+            <td colspan="2" style="text-align:right;">${cgstRate}%</td>
+            <td colspan="2" style="text-align:right;">${cgstAmount.toFixed(2)}</td>
+            <td colspan="3" style="text-align:right;">${totalRowTax.toFixed(2)}</td>
+        </tr>
+        `;
+
+                tbody.insertAdjacentHTML("beforeend", row);
+            }
+
+            // Bottom total row
+            const totalRow = `
+    <tr>
+        <td colspan="2" style="text-align:right;font-weight:bold;">Total</td>
+        <td colspan="3" style="text-align:right;font-weight:bold;">${totalTaxable.toFixed(2)}</td>
+        <td colspan="2"></td>
+        <td colspan="2" style="text-align:right;font-weight:bold;">${totalSGST.toFixed(2)}</td>
+        <td colspan="2"></td>
+        <td colspan="2" style="text-align:right;font-weight:bold;">${totalCGST.toFixed(2)}</td>
+        <td colspan="3" style="text-align:right;font-weight:bold;">${totalTax.toFixed(2)}</td>
+    </tr>
+    `;
+
+            tbody.insertAdjacentHTML("beforeend", totalRow);
+
+            updateFinalTotal(totalTaxable + totalTax);
+        }
+        function calculateGrandTotal() {
+
+            let totals = {
+                quantity: 0,
+                amount: 0
+            };
+
+            document.querySelectorAll("#invoice-body tr").forEach(row => {
+
+                if (row.id === "filler-row") return;
+
+                for (let key in totals) {
+
+                    const cell = row.querySelector(`[data-field="${key}"]`);
+                    if (!cell) continue;
+
+                    totals[key] += parseFloat(cell.innerText) || 0;
+                }
+            });
+
+            // 🔹 Get GST totals from footer (already calculated in calculateGst)
+            const totalRow = document.getElementById("gst-total-row");
+            const gstCells = totalRow ? totalRow.querySelectorAll("td") : [];
+
+            const totalSgst = gstCells[3] ? parseFloat(gstCells[3].innerText) || 0 : 0;
+            const totalCgst = gstCells[5] ? parseFloat(gstCells[5].innerText) || 0 : 0;
+
+            const totalTax = totalSgst + totalCgst;
+
+            // 🔹 Calculate final total
+            const grossTotal = totals.amount + totalTax;
+
+            // 🔹 Round Off Logic
+            const roundedTotal = Math.round(grossTotal);
+            const roundOff = roundedTotal - grossTotal;
+
+            // 🔹 Display Grand Quantity
+            document.getElementById("grand-quantity").innerText =
+                totals.quantity;
+
+            // 🔹 Display Final Rounded Grand Amount
+            document.getElementById("grand-amount").innerText =
+                "₹ " + roundedTotal.toLocaleString("en-IN", {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2
+                });
+
+            // 🔹 Display breakup inside filler-row
+            document.getElementById("grand-total-words").innerText =
+                numberToWordsIndian(roundedTotal);
+
+            // 🔹 Display breakup inside filler-row
+            const fillerRow = document.getElementById("total_calc");
+
+            // Adjust index based on your structure
+            fillerRow.innerHTML = `<hr style="margin-top:0px; border: none; height: 1px; background-color: #000;">
+        <div style="
+            text-align: right;
+            font-weight: bold;
+            word-break: break-word;
+            overflow-wrap: break-word;
+        ">
+            ${totals.amount.toFixed(2)} <br>
+            ${totalSgst.toFixed(2)} <br>
+            ${totalCgst.toFixed(2)} <br>
+            ${roundOff.toFixed(2)}
+        </div>
+    `;
+        }
+
+        function numberToWordsIndian(num) {
+
+            const ones = [
+                "", "One", "Two", "Three", "Four", "Five", "Six",
+                "Seven", "Eight", "Nine", "Ten", "Eleven", "Twelve",
+                "Thirteen", "Fourteen", "Fifteen", "Sixteen",
+                "Seventeen", "Eighteen", "Nineteen"
+            ];
+
+            const tens = [
+                "", "", "Twenty", "Thirty", "Forty",
+                "Fifty", "Sixty", "Seventy", "Eighty", "Ninety"
+            ];
+
+            function convertBelowThousand(n) {
+                let str = "";
+
+                if (n >= 100) {
+                    str += ones[Math.floor(n / 100)] + " Hundred ";
+                    n = n % 100;
+                }
+
+                if (n >= 20) {
+                    str += tens[Math.floor(n / 10)] + " ";
+                    n = n % 10;
+                }
+
+                if (n > 0) {
+                    str += ones[n] + " ";
+                }
+
+                return str.trim();
+            }
+
+            if (num === 0) return "Indian Rupees Zero Only.";
+
+            let result = "";
+
+            const crore = Math.floor(num / 10000000);
+            num %= 10000000;
+
+            const lakh = Math.floor(num / 100000);
+            num %= 100000;
+
+            const thousand = Math.floor(num / 1000);
+            num %= 1000;
+
+            const remainder = num;
+
+            if (crore) result += convertBelowThousand(crore) + " Crore ";
+            if (lakh) result += convertBelowThousand(lakh) + " Lakh ";
+            if (thousand) result += convertBelowThousand(thousand) + " Thousand ";
+            if (remainder) result += convertBelowThousand(remainder);
+
+            return "Indian Rupees " + result.trim() + " Only.";
+        }
+
+        let currentRow = null;
+        document.addEventListener("click", function (e) {
+            const row = e.target.closest("#invoice-body tr");
+            if (!row) return;
+            // 🚫 Do not select filler row
+            if (row.id === "filler-row") return;
+            // Remove previous selection
+            document.querySelectorAll("#invoice-body tr").forEach(r => {
+                r.classList.remove("selected-row");
+            });
+            row.classList.add("selected-row");
+        });
+
+        document.addEventListener("click", function (e) {
+
+            const cell = e.target.closest("#invoice-body td[contenteditable='true']");
+            if (!cell) return;
+
+            // Remove previous active cell
+            document.querySelectorAll(".active-cell").forEach(td => {
+                td.classList.remove("active-cell");
+            });
+
+            cell.classList.add("active-cell");
+
+        });
+
+        document.addEventListener("click", function (e) {
+
+            if (!e.target.closest("#invoice-body")) {
+                document.querySelectorAll(".active-cell").forEach(td => {
+                    td.classList.remove("active-cell");
+                });
+            }
+        });
+
+        document.addEventListener("focusin", function (e) {
+
+            const cell = e.target.closest("#invoice-body td[contenteditable='true']");
+            if (!cell) return;
+
+            if (cell) activeCell = cell;
+
+            const row = cell.closest("tr");
+            if (!row || row.id === "filler-row") return;
+
+            currentRow = row;  // 🔥 store active row
+
+            // Remove previous row selection
+            document.querySelectorAll("#invoice-body tr").forEach(r => {
+                r.classList.remove("selected-row");
+            });
+
+            document.querySelectorAll(".active-cell").forEach(td => {
+                td.classList.remove("active-cell");
+            });
+
+            row.classList.add("selected-row");
+            cell.classList.add("active-cell");
+
+        });
+
+        function deleteSelectedRow() {
+
+            const selected = document.querySelector(".selected-row");
+            if (!selected) return;
+
+            if (selected.id === "filler-row") return; // safety
+
+            selected.remove();
+            reNumberRows();
+        }
+
+        function reNumberRows() {
+
+            const rows = document.querySelectorAll("#invoice-body tr:not(#filler-row)");
+
+            rows.forEach((row, index) => {
+                row.querySelector(".serial-cell").innerText = (index + 1);
+            });
+
+        }
+
+        function formatText(command, value = null) {
+
+            if (value) {
+                document.execCommand(command, false, value);
+            } else {
+                document.execCommand(command, false, null);
+            }
+
+        }
+
+        function setFontSize(size) {
+
+            const selection = window.getSelection();
+            if (!selection.rangeCount || selection.isCollapsed) return;
+
+            const range = selection.getRangeAt(0);
+
+            const span = document.createElement("span");
+            span.style.fontSize = size;
+
+            span.appendChild(range.extractContents());
+            range.insertNode(span);
+
+            selection.removeAllRanges();
+            const newRange = document.createRange();
+            newRange.selectNodeContents(span);
+            selection.addRange(newRange);
+        }
+
+        function formatInvoiceCells(excludeCell = null) {
+
+            document.querySelectorAll("#invoice-body td[contenteditable='true']").forEach(cell => {
+
+                if (excludeCell && cell === excludeCell) return;
+
+                const field = cell.dataset.field;
+                if (!field) return;
+
+                let raw = cell.innerText.trim();
+                if (!raw) return;
+
+                /* ---------- GST ---------- */
+                if (field === "gst") {
+                    let gst = parseFloat(raw.replace(/[^\d.]/g, "")) || 0;
+                    cell.innerText = gst + "%";
+                    return;
+                }
+
+                /* ---------- NUMERIC ---------- */
+                if (field === "rate") {
+                    // 🔹 Rate: only .00, NO commas
+                    let num = parseFloat(raw.replace(/[^\d.]/g, "")) || 0;
+                    cell.innerText = num.toFixed(2);
+                    return;
+                }
+            });
+        }
+
+        async function generatePDFBlob() {
+
+            const element = document.getElementById("a4");
+
+            // Remove UI-only highlight classes before html2canvas renders the invoice
+            // (html2canvas captures the live DOM visually; @media print does not apply)
+            const selectedRows = element.querySelectorAll(".selected-row");
+            const activeCells  = element.querySelectorAll(".active-cell");
+            selectedRows.forEach(r => r.classList.remove("selected-row"));
+            activeCells.forEach(c => {
+                c.classList.remove("active-cell");
+                c.style.outline = "none";
+            });
+
+            const opt = {
+                margin: 0,
+                filename: "Tax-Invoice.pdf",
+                image: { type: "jpeg", quality: 1 },
+                html2canvas: { scale: 2, scrollY: 0 },
+                jsPDF: { unit: "mm", format: "a4", orientation: "portrait" }
+            };
+
+            try {
+
+                const blob = await html2pdf().set(opt).from(element).outputPdf("blob");
+                return blob;
+
+            } catch (err) {
+
+                console.error("PDF generation failed:", err);
+                alert("PDF generation failed");
+                return null;
+
+            } finally {
+                // Restore UI classes so the interactive screen is unchanged
+                selectedRows.forEach(r => r.classList.add("selected-row"));
+                activeCells.forEach(c => {
+                    c.classList.add("active-cell");
+                    c.style.outline = "";
+                });
+            }
+        }
+
+        async function printPage() {
+
+            const blob = await generatePDFBlob();
+            if (!blob) return;
+
+            const formData = new FormData();
+            formData.append("file", blob, "invoice.pdf");
+
+            const response = await fetch("/pdf-action", {
+                method: "POST",
+                body: formData
+            });
+
+            const pdfBlob = await response.blob();
+            const url = URL.createObjectURL(pdfBlob);
+
+            const iframe = document.createElement("iframe");
+
+            iframe.style.position = "fixed";
+            iframe.style.right = "0";
+            iframe.style.bottom = "0";
+            iframe.style.width = "0";
+            iframe.style.height = "0";
+            iframe.style.border = "0";
+
+            iframe.src = url;
+
+            document.body.appendChild(iframe);
+
+            iframe.onload = function () {
+                iframe.contentWindow.focus();
+                iframe.contentWindow.print();
+            };
+
+        }
+
+        /*
+        async function downloadPDF() {
+        
+            const blob = await generatePDFBlob();
+            if (!blob) return;
+        
+            const url = URL.createObjectURL(blob);
+        
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = "Tax-Invoice.pdf";
+        
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        
+            URL.revokeObjectURL(url);
+        
+        }
+        
+        async function sharePDF() {
+        
+            const blob = await generatePDFBlob();
+            if (!blob) return;
+        
+            const file = new File([blob], "Tax-Invoice.pdf", {
+                type: "application/pdf"
+            });
+        
+            if (navigator.share && navigator.canShare({ files: [file] })) {
+        
+                await navigator.share({
+                    title: "Invoice",
+                    text: "Invoice from SRI TRADERS",
+                    files: [file]
+                });
+        
+            } else {
+        
+                const url = URL.createObjectURL(blob);
+                window.open(url, "_blank");
+        
+            }
+        
+        }
+        */
+
+        function saveData() {
+
+            const original = document.getElementById("a4");
+            const clone = original.cloneNode(true);
+
+            // Remove selected row highlight
+            clone.querySelectorAll(".selected-row").forEach(row => {
+                row.classList.remove("selected-row");
+            });
+
+            // Remove active cell border
+            clone.querySelectorAll(".active-cell").forEach(cell => {
+                cell.classList.remove("active-cell");
+            });
+
+            const cleanedHTML = clone.outerHTML;
+
+            /* ---------- ASK NAME ONLY FOR NEW INVOICE ---------- */
+
+            if (!currentInvoiceId) {
+
+                const name = prompt("Enter Invoice Name / Number");
+
+                if (!name) return;
+
+                fetch("/save", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({
+                        name: name,
+                        data: cleanedHTML
+                    })
+                })
+                    .then(res => res.json())
+                    .then(result => {
+
+                        currentInvoiceId = result.invoice_id;
+                        currentFileName = name;
+
+                        alert("Invoice saved");
+
+                        loadInvoiceList();
+
+                    });
+
+            }
+
+            /* ---------- UPDATE EXISTING INVOICE ---------- */
+
+            else {
+
+                fetch("/update-invoice", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({
+                        id: currentInvoiceId,
+                        name: currentFileName,
+                        data: cleanedHTML
+                    })
+                })
+                    .then(res => res.json())
+                    .then(result => {
+                        alert("Invoice updated");
+                        loadInvoiceList();
+                    });
+
+            }
+
+        }
+
+        async function loadInvoiceList() {
+
+            const res = await fetch("/get-invoices");
+            const invoices = await res.json();
+
+            const container = document.getElementById("invoice-list");
+
+            container.innerHTML = "";
+
+            let currentGroup = "";
+
+            invoices
+                .sort((a, b) => b.id - a.id)   // newest first
+                .forEach(inv => {
+
+                    const label = getDateLabel(inv.id);
+
+                    if (label !== currentGroup) {
+
+                        const header = document.createElement("div");
+                        header.className = "date-header";
+                        header.textContent = label;
+
+                        container.appendChild(header);
+
+                        currentGroup = label;
+
+                    }
+
+                    const row = document.createElement("div");
+
+                    row.className = "invoice-item";
+
+                    row.innerHTML = `
+<div class="invoice-id" onclick="loadInvoice('${inv.id}')">
+${inv.name}
+</div>
+
+<div class="right-actions">
+<span class="icon-btn" onclick="renameInvoice('${inv.id}')" title="Rename">✏️</span>
+<span class="icon-btn" onclick="deleteInvoice('${inv.id}')" title="Delete">🗑️</span>
+</div>
+`;
+
+                    container.appendChild(row);
+
+                });
+
+        }
+
+        async function loadInvoice(id) {
+
+            const res = await fetch("/get-invoice/" + id);
+            const data = await res.json();
+
+            if (!data.data) return;
+
+            document.getElementById("a4").outerHTML = data.data;
+
+            currentInvoiceId = data.id;
+            currentFileName = data.name;
+
+        }
+
+        function loadNewInvoice() {
+
+
+            document.getElementById("a4").outerHTML = `
+<div id="a4" class="a4-portrait">
+
+        <div class="watermark"></div>
+
+        <img src="{{ url_for('static', filename='logo.jpeg') }}"
+            style="max-width: 100%; width: auto; height: auto;margin: 0px;padding: 0px;border: 1px solid black; border-bottom: 0px solid black;">
+
+        <table class="invoice-table">
+
+        <tr>
+        <td>
+
+        <!-- ===== TOP SECTION ===== -->
+        <table class="top-table">
+        <colgroup>
+        <col><col><col><col>
+        </colgroup>
+
+        <tr>
+            <td id="cell-1" rowspan="3" colspan="2">
+                <div style="font-size: 12px;">580, SATHY ROAD, KAVINDAPADI, ERODE - 638 455<br><br>GSTIN NO : 33AEBPU1027L1ZL<br>STATE NAME : TAMILNADU &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Code : 33<br>EMAIL ID: sritraders210199@gmail.com<br> MOBILE NO : 90431 24078</div>
+            </td>
+            <td id="cell-3">
+                <div style="font-size: 10px;">Invoice No</div><div style="font-weight: bolder;font-size: 11px;padding-top: 3px;" contenteditable="true" id="invoiceNo"></div>
+            </td>
+            <td id="cell-4">
+                <div style="font-size: 10px;">Dated</div><div id="date" style="font-weight: bolder;font-size: 11px;padding-top: 3px;" contenteditable="true" id="dated">${formattedDate()}</div>
+            </td>
+        </tr>
+        <tr>
+            <td id="cell-6">
+                <div style="font-size: 10px;">Delivery note</div><div style="font-weight: bolder;font-size: 11px;padding-top: 3px;" contenteditable="true"></div>
+            </td>
+            <td id="cell-5">
+                <div style="font-size: 10px;">Mode/Terms of Payment</div><div style="font-weight: bolder;font-size: 11px;padding-top: 3px;" contenteditable="true"></div>
+            </td>
+        </tr>
+        <tr>
+        <td id="cell-7">
+            <div style="font-size: 10px;">Eway Bill Number</div><div style="font-weight: bolder;font-size: 11px;padding-top: 3px;" contenteditable="true"></div>
+        </td>
+        <td id="cell-8">
+            <div style="font-size: 10px;">Vehicle Number</div><div style="font-weight: bolder;font-size: 11px;padding-top: 3px;" contenteditable="true"></div>
+        </td>
+        </tr>
+
+        <tr>
+        <td id="cell-2" rowspan="4" colspan="2" contenteditable="true"  style="font-size: 11px;">
+        </td>
+        <td id="cell-9">
+            <div style="font-size: 10px;">Buyer's Order No</div><div style="font-weight: bolder;font-size: 11px;padding-top: 3px;" contenteditable="true"></div>
+        </td>
+        <td id="cell-12">
+            <div style="font-size: 10px;">Delivery Note Date</div><div style="font-weight: bolder;font-size: 11px;padding-top: 3px;" contenteditable="true"></div>
+        </td>
+        </tr>
+        <tr>
+        <td id="cell-11">
+            <div style="font-size: 10px;">Dispatch Document No</div><div style="font-weight: bolder;font-size: 11px;padding-top: 3px;" contenteditable="true"></div>
+        </td>
+        <td id="cell-14">
+            <div style="font-size: 10px;">Destination</div><div style="font-weight: bolder;font-size: 11px;padding-top: 3px;" contenteditable="true"></div>
+        </td>
+        </tr>
+        <tr>
+        <td id="cell-13">
+            <div style="font-size: 10px;">Dispatch Through</div><div style="font-weight: bolder;font-size: 11px;padding-top: 3px;" contenteditable="true"></div>
+        </td>
+        <td id="cell-14">
+            <div style="font-size: 10px;">Terms of Delivery</div><div style="font-weight: bolder;font-size: 11px;padding-top: 3px;" contenteditable="true"></div>
+        </td>
+        </tr>
+
+        </table>
+
+        </td>
+        </tr>
+
+        <tr>
+        <td style="position:relative; height:100%;">
+
+        <!-- ===== BODY SECTION ===== -->
+        <table class="body-table">
+
+        <thead>
+        <tr>
+        <th>S.no</th>
+        <th colspan="8">Description of Goods</th>
+        <th colspan="1">HSN/ SAC</th>
+        <th>Qty</th>
+        <th colspan="2">Rate</th>
+        <th>Gst</th>
+        <th colspan="2">Amount</th>
+        </tr>
+        </thead>
+
+        <tbody id="invoice-body">
+            <!-- Data rows will be inserted above this -->
+            <tr id="filler-row">
+                <td></td>
+                <td colspan="8" style="font-weight: bold;text-align: right;"><br>CGST<br>SGST<br>Round Off</td>
+                <td colspan="1"></td>
+                <td></td>
+                <td colspan="2"></td>
+                <td ></td>
+                <td colspan="2" id="total_calc"></td>
+            </tr>
+        </tbody>
+
+        <tfoot>
+            <tr>
+                <td></td>
+                <td colspan="8" style="font-weight: bolder;text-align: right;">Total</td>
+                <td colspan="1"></td>
+                <td id="grand-quantity" style="text-align:right;font-weight:bolder;" class="calc-cell"></td>
+                <td colspan="2"></td>
+                <td id="grand-amount" colspan="3" style="text-align:right;font-weight:800;" class="calc-cell"></td>
+            </tr>
+            <tr>
+                <td colspan="16">
+                    <div style="display: flex; justify-content: space-between;padding: 2px 30px;font-size: 9px;">
+                        <div>Amount Chargeable (Indian Rupees) (in words)</div>
+                        <div>E &amp; OE</div>
+                    </div>
+                    <div style="font-size: 12px; font-weight: bold;" id="grand-total-words" class="calc-cell"></div>
+                </td>
+            </tr>
+
+
+            <tr style="font-weight: bold;">
+                <td colspan="2" rowspan="2" style="text-align:center; vertical-align:middle;">HSN/SAC</td>
+                <td colspan="3" rowspan="2" style="text-align:center; vertical-align:middle;">Taxable value (₹)</td>
+                <td colspan="4" style="text-align:center;">SGST</td>
+                <td colspan="4" style="text-align:center;">CGST</td>
+                <td colspan="3" rowspan="2" style="text-align:center; vertical-align:middle;">Total Tax Amount (₹)</td>
+            </tr>
+            <tr style="font-weight: bold;">
+                <td colspan="2" style="text-align:center;">Price</td>
+                <td colspan="2" style="text-align:center;">Amount (₹)</td>
+                <td colspan="2" style="text-align:center;">Price</td>
+                <td colspan="2" style="text-align:center;">Amount (₹)</td>
+            </tr>
+                <tr id="gst-total-row">
+                <td colspan="2" style="text-align:right;font-weight: bold;">Total</td>
+                <td colspan="3" style="text-align:right;font-weight: bold;"></td>
+                <td colspan="2" style="text-align:right;font-weight: bold;"></td>
+                <td colspan="2" style="text-align:right;font-weight: bold;"></td>
+                <td colspan="2" style="text-align:right;font-weight: bold;"></td>
+                <td colspan="2" style="text-align:right;font-weight: bold;"></td>
+                <td colspan="3" style="text-align:right;font-weight: bold;"></td>
+            </tr>
+
+            <tr>
+                <td colspan="16" contenteditable="true">
+                    <div style="padding: 3px;"><span contenteditable="false" style="font-weight: bold;">Account Number &nbsp; : &nbsp;&nbsp;</span></div>
+                    <div style="padding: 3px;"><span contenteditable="false" style="font-weight: bold;">Bank &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; : &nbsp;&nbsp;</span></div>
+                    <div style="padding: 3px;"><span contenteditable="false" style="font-weight: bold;">Branch &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; : &nbsp;&nbsp;</span></div>
+                    <div style="padding: 3px;"><span contenteditable="false" style="font-weight: bold;">IFSC Code &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; : &nbsp;&nbsp;</span></div>
+                </td>
+            </tr>
+            
+            <tr>
+                <td colspan="10" rowspan="2" style="border: none;padding-top: 10px;" contenteditable="true"></td>
+                <td colspan="6"><div style="font-size: medium;font-weight: bold;">For SRI TRADERS</div><br><br><br><div style="text-align: center;font-size: 10px;">Authorised signature</div></td>
+            </tr>
+        </tfoot>
+
+        </table>
+
+        </td>
+        </tr>
+
+        </table>
+    </div>
+`;
+
+            currentInvoiceId = null;
+            currentFileName = null;
+
+        }
+
+        async function renameInvoice(oldId) {
+
+            const newId = prompt("Enter new invoice name", oldId);
+
+            if (!newId) return;
+
+            await fetch("/rename-invoice", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    old_id: oldId,
+                    new_id: newId
+                })
+            });
+
+            loadInvoiceList();
+
+        }
+
+        async function deleteInvoice(id) {
+
+            if (!confirm("Delete invoice " + id + " ?")) return;
+
+            await fetch("/delete-invoice", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({ id: id })
+            });
+
+            loadInvoiceList();
+
+        }
+
+
+        function getDateLabel(timestamp) {
+
+            const date = new Date(parseInt(timestamp));
+
+            const today = new Date();
+            const yesterday = new Date();
+
+            yesterday.setDate(today.getDate() - 1);
+
+            if (date.toDateString() === today.toDateString()) {
+                return "Today";
+            }
+
+            if (date.toDateString() === yesterday.toDateString()) {
+                return "Yesterday";
+            }
+
+            return date.toLocaleDateString();
+        }
+
+        function searchInvoices() {
+
+            const q = document
+                .getElementById("invoiceSearch")
+                .value
+                .toLowerCase()
+                .trim();
+
+            document.querySelectorAll("#invoice-list .invoice-item")
+                .forEach(row => {
+
+                    const name = row
+                        .querySelector(".invoice-id")
+                        .textContent
+                        .toLowerCase();
+
+                    row.style.display = name.includes(q) ? "flex" : "none";
+
+                });
+
+        }
+
+    </script>
+
+</body>
+
+</html>
