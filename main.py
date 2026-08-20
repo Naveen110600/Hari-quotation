@@ -11,7 +11,8 @@ from flask import Flask, render_template, request, jsonify, send_file, session, 
 from supabase import create_client
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-load_dotenv(os.path.join(BASE_DIR, ".env"))
+# Ensure .env is explicitly loaded from BASE_DIR
+load_dotenv(os.path.join(BASE_DIR, ".env"), override=True)
 
 EXTRACTED_DIR = os.path.join(
     BASE_DIR,
@@ -38,24 +39,53 @@ SUPABASE_URL = (os.environ.get("SUPABASE_URL") or "").strip()
 SUPABASE_KEY = (os.environ.get("SUPABASE_KEY") or "").strip()
 
 supabase = None
+_supabase_init_error = None
+
+
+def init_supabase():
+    global supabase, _supabase_init_error
+    url = (os.environ.get("SUPABASE_URL") or SUPABASE_URL or "").strip()
+    key = (os.environ.get("SUPABASE_KEY") or SUPABASE_KEY or "").strip()
+
+    if not url or not key:
+        missing = []
+        if not url:
+            missing.append("SUPABASE_URL")
+        if not key:
+            missing.append("SUPABASE_KEY")
+        _supabase_init_error = f"Missing environment variable(s): {', '.join(missing)}"
+        print(f"[Supabase Init] {_supabase_init_error}")
+        return None
+
+    try:
+        supabase = create_client(url, key)
+        _supabase_init_error = None
+        print(f"[Supabase Init] Client initialized successfully for {url}")
+        return supabase
+    except Exception as e:
+        _supabase_init_error = f"Client creation error: {str(e)}"
+        print(f"[Supabase Init Error] {_supabase_init_error}")
+        return None
 
 
 def get_supabase():
     global supabase
     if supabase is None:
-        url = (os.environ.get("SUPABASE_URL") or SUPABASE_URL or "").strip()
-        key = (os.environ.get("SUPABASE_KEY") or SUPABASE_KEY or "").strip()
-        if url and key:
-            try:
-                supabase = create_client(url, key)
-            except Exception as e:
-                print("Error initializing Supabase client:", e)
+        init_supabase()
     return supabase
 
 
+def get_supabase_with_status():
+    global supabase, _supabase_init_error
+    if supabase is None:
+        init_supabase()
+    return supabase, _supabase_init_error
+
+
 def reset_supabase():
-    global supabase
+    global supabase, _supabase_init_error
     supabase = None
+    _supabase_init_error = None
 
 
 def format_supabase_error(e):
@@ -63,21 +93,22 @@ def format_supabase_error(e):
     if hasattr(e, "json") and callable(e.json):
         try:
             err_dict = e.json()
-            if isinstance(err_dict, dict) and "message" in err_dict:
-                err_str = err_dict["message"]
+            if isinstance(err_dict, dict):
+                err_str = err_dict.get("message") or err_dict.get("error") or str(err_dict)
         except Exception:
             pass
-    if not err_str:
-        if hasattr(e, "message") and e.message:
-            err_str = str(e.message)
-        elif hasattr(e, "args") and e.args:
-            first_arg = e.args[0]
-            if isinstance(first_arg, dict) and "message" in first_arg:
-                err_str = first_arg["message"]
-            else:
-                err_str = str(first_arg)
+    if not err_str and hasattr(e, "details") and e.details:
+        err_str = str(e.details)
+    if not err_str and hasattr(e, "message") and e.message:
+        err_str = str(e.message)
+    if not err_str and hasattr(e, "args") and e.args:
+        first_arg = e.args[0]
+        if isinstance(first_arg, dict):
+            err_str = first_arg.get("message") or first_arg.get("error") or str(first_arg)
         else:
-            err_str = str(e)
+            err_str = str(first_arg)
+    if not err_str:
+        err_str = str(e)
 
     if "row-level security" in err_str.lower() or "rls" in err_str.lower():
         err_str += " (Supabase RLS Policy: The 'invoices' table is blocking write access. Disable RLS or add an INSERT policy for anon in Supabase, or provide the service_role key in .env)"
@@ -86,14 +117,29 @@ def format_supabase_error(e):
 
 @app.before_request
 def require_login():
-    # Allow login route and static files without login
-    if request.endpoint in ["login", "static"] or (request.path and request.path.startswith("/static/")):
+    # Allow login route, health check, and static files without login
+    if request.endpoint in ["login", "static", "health"] or (request.path and (request.path.startswith("/static/") or request.path == "/health")):
         return None
 
     if not session.get("logged_in"):
         if request.is_json or request.path.startswith("/get-") or request.path in ["/save", "/update-invoice", "/rename-invoice", "/delete-invoice", "/pdf-action"]:
             return jsonify({"error": "Unauthorized"}), 401
         return redirect(url_for("login"))
+
+
+@app.route("/health", methods=["GET"])
+def health():
+    has_url = bool((os.environ.get("SUPABASE_URL") or SUPABASE_URL or "").strip())
+    has_key = bool((os.environ.get("SUPABASE_KEY") or SUPABASE_KEY or "").strip())
+    db, err = get_supabase_with_status()
+
+    return jsonify({
+        "status": "healthy" if db is not None else "degraded",
+        "flask_running": True,
+        "supabase_configured": has_url and has_key,
+        "supabase_initialized": db is not None,
+        "supabase_error": err if not db else None
+    }), 200
 
 
 @app.route("/login", methods=["GET", "POST"])
@@ -131,9 +177,9 @@ def index():
 
 @app.route("/get-invoices")
 def get_invoices():
-    db = get_supabase()
+    db, err = get_supabase_with_status()
     if not db:
-        return jsonify({"error": "Supabase client is not configured"}), 500
+        return jsonify({"error": f"Database unavailable: {err or 'Supabase client is not configured'}"}), 500
 
     try:
         response = db.table("invoices").select("id, invoice_id, file_name, html_data, created_at").order("id", desc=True).execute()
@@ -155,9 +201,9 @@ def get_invoices():
 
 @app.route("/get-invoice/<invoice_id>")
 def get_invoice(invoice_id):
-    db = get_supabase()
+    db, err = get_supabase_with_status()
     if not db:
-        return jsonify({"error": "Supabase client is not configured"}), 500
+        return jsonify({"error": f"Database unavailable: {err or 'Supabase client is not configured'}"}), 500
 
     try:
         response = db.table("invoices").select("id, invoice_id, file_name, html_data, created_at").eq("invoice_id", str(invoice_id)).execute()
@@ -189,9 +235,16 @@ def get_invoice(invoice_id):
 
 @app.route("/save", methods=["POST"])
 def save():
-    db = get_supabase()
+    db, err = get_supabase_with_status()
     if not db:
-        return jsonify({"error": "Supabase client is not configured"}), 500
+        # Re-try once in case of temporary disconnect
+        reset_supabase()
+        db, err = get_supabase_with_status()
+
+    if not db:
+        err_msg = err or "Supabase client is not configured"
+        print(f"[Save Invoice Error] Supabase unavailable: {err_msg}")
+        return jsonify({"error": f"Database unavailable: {err_msg}"}), 500
 
     data = request.json or {}
     file_name = data.get("name", "").strip()
@@ -222,9 +275,9 @@ def save():
 
 @app.route("/update-invoice", methods=["POST"])
 def update_invoice():
-    db = get_supabase()
+    db, err = get_supabase_with_status()
     if not db:
-        return jsonify({"error": "Supabase client is not configured"}), 500
+        return jsonify({"error": f"Database unavailable: {err or 'Supabase client is not configured'}"}), 500
 
     data = request.json or {}
     inv_id = str(data.get("id", "")).strip()
@@ -249,9 +302,9 @@ def update_invoice():
 
 @app.route("/rename-invoice", methods=["POST"])
 def rename_invoice():
-    db = get_supabase()
+    db, err = get_supabase_with_status()
     if not db:
-        return jsonify({"error": "Supabase client is not configured"}), 500
+        return jsonify({"error": f"Database unavailable: {err or 'Supabase client is not configured'}"}), 500
 
     data = request.json or {}
     old_id = str(data.get("old_id", "")).strip()
@@ -273,9 +326,9 @@ def rename_invoice():
 
 @app.route("/delete-invoice", methods=["POST"])
 def delete_invoice():
-    db = get_supabase()
+    db, err = get_supabase_with_status()
     if not db:
-        return jsonify({"error": "Supabase client is not configured"}), 500
+        return jsonify({"error": f"Database unavailable: {err or 'Supabase client is not configured'}"}), 500
 
     data = request.json or {}
     delete_id = str(data.get("id", "")).strip()
@@ -315,8 +368,8 @@ def pdf_action():
 # ---------------------------------------------------------
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    host = os.environ.get("HOST", "127.0.0.1")
+    port = int(os.environ.get("PORT", 5002))
+    host = os.environ.get("HOST", "0.0.0.0" if os.environ.get("RENDER") else "127.0.0.1")
 
     # Automatically open the billing website in Chrome for local development
     if host in ["127.0.0.1", "localhost"] and not os.environ.get("RENDER"):
@@ -344,6 +397,7 @@ if __name__ == "__main__":
 
         threading.Timer(1.5, open_browser).start()
 
+    print(f"Starting Hari Quotation Server on http://{host}:{port}")
     app.run(
         host=host,
         port=port,
