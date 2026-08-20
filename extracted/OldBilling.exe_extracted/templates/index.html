@@ -74,6 +74,7 @@
             vertical-align: top;
             font-size: 11px;
             min-height: 40px;
+            overflow: hidden;   /* Change 1: content stays inside, never pushes borders */
         }
 
         /* 50% left / 50% right */
@@ -127,7 +128,22 @@
             outline: none;
         }
 
+        /* Validity terms input — hidden number field */
+        .validity-days-input {
+            width: 36px;
+            text-align: center;
+            font-weight: bold;
+            font-size: 11px;
+            border: 1px solid #767676;
+            border-radius: 3px;
+            padding: 1px 2px;
+            outline: none;
+            vertical-align: baseline;
+        }
+
         @media print {
+            .validity-days-input { border: none !important; background: transparent !important; }
+            .validity-dots        { display: none !important; }
             body {
                 background: none;
                 margin: 0;
@@ -177,6 +193,27 @@
         .pdf-mode .selected-row td {
             background: #fff !important;
             background-color: #fff !important;
+        }
+
+        .validity-days-input::-webkit-outer-spin-button,
+        .validity-days-input::-webkit-inner-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+
+        .validity-days-input {
+            -moz-appearance: textfield;
+            font-family: inherit;
+        }
+
+        @media print {
+            .validity-days-input,
+            .validity-input-wrapper {
+                display: none !important;
+            }
+            .validity-days-print-val {
+                display: inline !important;
+            }
         }
 
         #editor-toolbar {
@@ -691,10 +728,98 @@
             const formattedDate = `${day}/${month}/${year}`;
             return formattedDate;
         }
+
+        function updateValidityDays(val) {
+            let days = parseInt(val, 10);
+            if (isNaN(days) || days <= 0) {
+                days = 15;
+            }
+            document.querySelectorAll(".validity-days-val").forEach(el => {
+                el.textContent = days;
+            });
+            document.querySelectorAll(".validity-days-print-val").forEach(el => {
+                el.textContent = days;
+            });
+            const input = document.getElementById("validity-days-input");
+            if (input) {
+                input.setAttribute("value", days);
+                input.setAttribute("data-validity-days", days);
+            }
+        }
+
+        /* Change 2: swap dots ↔ value in cell-terms */
+        function updateValidityTerms(val) {
+            const days = parseInt(val, 10);
+            const hasValue = !isNaN(days) && days > 0;
+
+            // dots span: visible when no value entered
+            document.querySelectorAll(".validity-dots").forEach(el => {
+                el.style.display = hasValue ? 'none' : 'inline';
+            });
+
+            // value span: visible when value entered
+            document.querySelectorAll(".validity-val-text").forEach(el => {
+                el.style.display = hasValue ? 'inline' : 'none';
+                if (hasValue) el.textContent = days + ' days';
+            });
+
+            // second line value
+            document.querySelectorAll(".validity-days-val2").forEach(el => {
+                el.textContent = hasValue ? days : '';
+            });
+        }
+
+        function handleValidityDaysInput(e) {
+            let val = e.target.value.replace(/[^0-9]/g, '');
+            if (val.startsWith('0') && val.length > 1) {
+                val = val.replace(/^0+/, '');
+            }
+            e.target.value = val;
+            if (val !== '') {
+                const days = parseInt(val, 10);
+                if (days > 0) {
+                    updateValidityDays(days);
+                    updateValidityTerms(days);
+                }
+            } else {
+                updateValidityTerms('');
+            }
+        }
+
+        function preventInvalidValidityKey(e) {
+            if (['-', '+', '.', 'e', 'E'].includes(e.key)) {
+                e.preventDefault();
+            }
+        }
+
+        function validateValidityDays(e) {
+            let val = parseInt(e.target.value, 10);
+            if (isNaN(val) || val <= 0) {
+                val = 15;
+            }
+            e.target.value = val;
+            updateValidityDays(val);
+            updateValidityTerms(val);
+        }
+
+        function reinitValidityDays() {
+            const input = document.getElementById("validity-days-input");
+            if (input) {
+                let days = parseInt(input.value || input.getAttribute("value"), 10);
+                if (isNaN(days) || days <= 0) {
+                    days = 15;
+                }
+                input.value = days;
+                updateValidityDays(days);
+                updateValidityTerms(days);
+            }
+        }
+
         document.addEventListener("DOMContentLoaded", function () {
 
             loadNewInvoice();   // load blank invoice on page load
             loadInvoiceList();
+            reinitValidityDays();
 
         });
 
@@ -1228,6 +1353,7 @@
         async function generatePDFBlob() {
 
             const element = document.getElementById("a4");
+            reinitValidityDays();
 
             // Remove UI-only highlight classes before html2canvas renders the invoice
             // (html2canvas captures the live DOM visually; @media print does not apply)
@@ -1238,6 +1364,11 @@
                 c.classList.remove("active-cell");
                 c.style.outline = "none";
             });
+
+            const printValSpans = element.querySelectorAll(".validity-days-print-val");
+            const inputWrappers = element.querySelectorAll(".validity-input-wrapper");
+            inputWrappers.forEach(w => w.style.display = "none");
+            printValSpans.forEach(s => s.style.display = "inline");
 
             const opt = {
                 margin: 0,
@@ -1265,6 +1396,8 @@
                     c.classList.add("active-cell");
                     c.style.outline = "";
                 });
+                inputWrappers.forEach(w => w.style.display = "");
+                printValSpans.forEach(s => s.style.display = "none");
             }
         }
 
@@ -1363,6 +1496,7 @@
 
         async function saveData() {
 
+            reinitValidityDays();
             const original = document.getElementById("a4");
             const clone = original.cloneNode(true);
 
@@ -1553,6 +1687,8 @@ ${escapeHtml(inv.name || 'Untitled Invoice')}
 
                 currentInvoiceId = data.id;
                 currentFileName = data.name;
+
+                reinitValidityDays();
             } catch (err) {
                 console.error("Error loading invoice:", err);
                 alert("Error loading invoice: " + (err.message || err));
@@ -1583,102 +1719,95 @@ ${escapeHtml(inv.name || 'Untitled Invoice')}
         </colgroup>
 
         <tr>
-            <td id="cell-1" rowspan="3" colspan="2">
-                <div style="font-size: 12px; line-height: 1.35;">
-                    <div>580, SATHY ROAD, KAVINDAPADI, ERODE - 638 455</div>
-                    <div style="margin-top: 8px;">
-                        <div style="margin-top: 8px;">
-
-    <!-- GSTIN -->
-    <div style="display: grid; grid-template-columns: 105px 15px auto; align-items: baseline;">
-        <span style="font-weight: bold;">GSTIN NO</span>
-        <span style="font-weight: bold; text-align: center;">:</span>
-        <span>33AEBPU1027L1ZL</span>
-    </div>
-
-    <!-- STATE + CODE -->
-    <div style="display: flex; align-items: baseline; justify-content: space-between;">
-        
-        <div style="display: grid; grid-template-columns: 105px 15px auto; align-items: baseline;">
-            <span style="font-weight: bold;">STATE NAME</span>
-            <span style="font-weight: bold; text-align: center;">:</span>
-            <span>TAMILNADU</span>
-        </div>
-
-        <div style="display: grid; grid-template-columns: 35px 15px 20px; align-items: baseline; margin-right: 15px;">
-            <span style="font-weight: bold;">Code</span>
-            <span style="font-weight: bold; text-align: center;">:</span>
-            <span>33</span>
-        </div>
-
-    </div>
-
-    <!-- EMAIL -->
-    <div style="display: grid; grid-template-columns: 105px 15px auto; align-items: baseline;">
-        <span style="font-weight: bold;">EMAIL ID</span>
-        <span style="font-weight: bold; text-align: center;">:</span>
-        <span>sritraders210199@gmail.com</span>
-    </div>
-
-    <!-- MOBILE -->
-    <div style="display: grid; grid-template-columns: 105px 15px auto; align-items: baseline;">
-        <span style="font-weight: bold;">MOBILE NO</span>
-        <span style="font-weight: bold; text-align: center;">:</span>
-        <span>90431 24078</span>
-    </div>
-
-</div>
-</div>
+            <td colspan="4" style="text-align: center; font-weight: bold; font-size: 13px; padding: 4px 0; letter-spacing: 0.5px;">
+                QUOTATION BILL
             </td>
-            <td id="cell-3">
-                <div style="font-size: 10px;">Invoice No</div><div style="font-weight: bolder;font-size: 11px;padding-top: 3px;" contenteditable="true" id="invoiceNo"></div>
-            </td>
-            <td id="cell-4">
-                <div style="font-size: 10px;">Dated</div><div id="date" style="font-weight: bolder;font-size: 11px;padding-top: 3px;" contenteditable="true" id="dated">${formattedDate()}</div>
-            </td>
-        </tr>
-        <tr>
-            <td id="cell-6">
-                <div style="font-size: 10px;">Delivery note</div><div style="font-weight: bolder;font-size: 11px;padding-top: 3px;" contenteditable="true"></div>
-            </td>
-            <td id="cell-5">
-                <div style="font-size: 10px;">Mode/Terms of Payment</div><div style="font-weight: bolder;font-size: 11px;padding-top: 3px;" contenteditable="true"></div>
-            </td>
-        </tr>
-        <tr>
-        <td id="cell-7">
-            <div style="font-size: 10px;">Eway Bill Number</div><div style="font-weight: bolder;font-size: 11px;padding-top: 3px;" contenteditable="true"></div>
-        </td>
-        <td id="cell-8">
-            <div style="font-size: 10px;">Vehicle Number</div><div style="font-weight: bolder;font-size: 11px;padding-top: 3px;" contenteditable="true"></div>
-        </td>
         </tr>
 
         <tr>
-        <td id="cell-2" rowspan="4" colspan="2" contenteditable="true"  style="font-size: 11px;">
-        </td>
-        <td id="cell-9">
-            <div style="font-size: 10px;">Buyer's Order No</div><div style="font-weight: bolder;font-size: 11px;padding-top: 3px;" contenteditable="true"></div>
-        </td>
-        <td id="cell-12">
-            <div style="font-size: 10px;">Delivery Note Date</div><div style="font-weight: bolder;font-size: 11px;padding-top: 3px;" contenteditable="true"></div>
-        </td>
+            <td id="cell-1" rowspan="2" colspan="2" style="padding: 3px 5px; vertical-align: top;">
+                <div style="font-size: 11px; line-height: 1.25;">
+                    <div style="margin-bottom: 2px;">580, SATHY ROAD, KAVINDAPADI, ERODE - 638 455</div>
+
+                    <!-- GSTIN -->
+                    <div style="display: grid; grid-template-columns: 85px 12px auto; align-items: baseline;">
+                        <span style="font-weight: bold;">GSTIN NO</span>
+                        <span style="font-weight: bold; text-align: center;">:</span>
+                        <span>33AEBPU1027L1ZL</span>
+                    </div>
+
+                    <!-- STATE + CODE -->
+                    <div style="display: flex; align-items: baseline; justify-content: space-between;">
+                        <div style="display: grid; grid-template-columns: 85px 12px auto; align-items: baseline;">
+                            <span style="font-weight: bold;">STATE NAME</span>
+                            <span style="font-weight: bold; text-align: center;">:</span>
+                            <span>TAMILNADU</span>
+                        </div>
+
+                        <div style="display: grid; grid-template-columns: 32px 10px auto; align-items: baseline; margin-right: 10px;">
+                            <span style="font-weight: bold;">Code</span>
+                            <span style="font-weight: bold; text-align: center;">:</span>
+                            <span>33</span>
+                        </div>
+                    </div>
+
+                    <!-- EMAIL -->
+                    <div style="display: grid; grid-template-columns: 85px 12px auto; align-items: baseline;">
+                        <span style="font-weight: bold;">EMAIL ID</span>
+                        <span style="font-weight: bold; text-align: center;">:</span>
+                        <span>sritraders210199@gmail.com</span>
+                    </div>
+
+                    <!-- MOBILE -->
+                    <div style="display: grid; grid-template-columns: 85px 12px auto; align-items: baseline;">
+                        <span style="font-weight: bold;">MOBILE NO</span>
+                        <span style="font-weight: bold; text-align: center;">:</span>
+                        <span>90431 24078</span>
+                    </div>
+                </div>
+            </td>
+            <td style="text-align: center; font-weight: bold; font-size: 11px; padding: 4px 0;">DATE</td>
+            <td style="text-align: center; font-weight: bold; font-size: 11px; padding: 4px 0;">MODE OF PAYMENT</td>
         </tr>
+
         <tr>
-        <td id="cell-11">
-            <div style="font-size: 10px;">Dispatch Document No</div><div style="font-weight: bolder;font-size: 11px;padding-top: 3px;" contenteditable="true"></div>
-        </td>
-        <td id="cell-14">
-            <div style="font-size: 10px;">Destination</div><div style="font-weight: bolder;font-size: 11px;padding-top: 3px;" contenteditable="true"></div>
-        </td>
+            <td style="text-align: center; font-weight: bolder; font-size: 11px; padding: 4px 0;" contenteditable="true" id="dated">${formattedDate()}</td>
+            <td style="text-align: center; font-weight: bolder; font-size: 11px; padding: 4px 0;" contenteditable="true" id="modeOfPayment"></td>
         </tr>
+
         <tr>
-        <td id="cell-13">
-            <div style="font-size: 10px;">Dispatch Through</div><div style="font-weight: bolder;font-size: 11px;padding-top: 3px;" contenteditable="true"></div>
-        </td>
-        <td id="cell-14">
-            <div style="font-size: 10px;">Terms of Delivery</div><div style="font-weight: bolder;font-size: 11px;padding-top: 3px;" contenteditable="true"></div>
-        </td>
+            <td id="cell-2" colspan="2" contenteditable="true" style="padding: 4px 6px; font-size: 11px; vertical-align: top; height: 100%; min-height: 85px; outline: none; line-height: 1.35;">
+            </td>
+            <td id="cell-terms" colspan="2" style="padding: 10px 8px; font-size: 11px; vertical-align: top; height: 100%; min-height: 85px; outline: none; line-height: 1.55; background: #ffffff;">
+                <!-- EDIT VERSION: visible on screen, hidden during print -->
+                <div class="validity-edit" style="font-weight: bold;">
+                    This quotation is valid for
+                    <input
+                        type="text"
+                        id="validity-date-input"
+                        placeholder="—"
+                        autocomplete="off"
+                        spellcheck="false"
+                        oninput="document.getElementById('validity-date-text').textContent=this.value"
+                        style="width:90px; font-weight:bold; font-size:inherit; font-family:inherit; color:inherit; text-align:center; border:1px solid #888; border-radius:2px; padding:0 3px; background:transparent; outline:none;"
+                    >
+                    from the date of issue.
+                </div>
+                <!-- PRINT VERSION: hidden on screen, shown during print.
+                     Contains ONLY a <span> — no <input> element whatsoever. -->
+                <div class="validity-print" style="font-weight: bold;">
+                    This quotation is valid for
+                    <span
+                        id="validity-date-text"
+                        class="validity-date-text"
+                    ></span>
+                    from the date of issue.
+                </div>
+                <!-- Line 2 -->
+                <div style="font-weight: bold; margin-top: 6px;">
+                    All prices are subject to current market price may be changed after if that changed.
+                </div>
+            </td>
         </tr>
 
         </table>
@@ -1917,6 +2046,45 @@ ${escapeHtml(inv.name || 'Untitled Invoice')}
         }
 
     </script>
+
+    <style>
+        /* =====================================================
+           VALIDITY DATE — two separate containers:
+           .validity-edit  = the editable version (has <input>)
+           .validity-print = the print version    (has <span> only, NO <input>)
+           ===================================================== */
+
+        /* SCREEN: show edit container, hide print container */
+        .validity-edit  { display: block; }
+        .validity-print { display: none;  }
+
+        /* PRINT: hide edit container (removes the <input> from print entirely),
+                  show print container (plain text + underline only) */
+        @media print {
+            .validity-edit {
+                display: none !important;
+            }
+            .validity-print {
+                display: block !important;
+                font-weight: bold;
+            }
+            .validity-date-text {
+                font-weight: bold;
+                font-size: inherit;
+                font-family: inherit;
+                color: inherit;
+                border: none;
+                outline: none;
+                box-shadow: none;
+                background: transparent;
+                text-decoration-line: underline;
+                text-decoration-thickness: 1px;
+                text-underline-offset: 2px;
+                padding: 0;
+                margin: 0;
+            }
+        }
+    </style>
 
 </body>
 

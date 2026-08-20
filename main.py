@@ -27,7 +27,8 @@ app = Flask(
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "sri-traders-hari-app-secure-session-key-2026")
 app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
-    SESSION_COOKIE_SAMESITE="Lax"
+    SESSION_COOKIE_SAMESITE="Lax",
+    TEMPLATES_AUTO_RELOAD=True
 )
 
 HARI_USERNAME = os.environ.get("HARI_USERNAME", "Hari")
