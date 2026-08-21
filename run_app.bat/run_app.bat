@@ -1,4 +1,4 @@
 @echo off
-cd /d "C:\Users\varsh\Downloads\hari app"
+cd /d "%~dp0.."
 py -3.12 main.py
 pause

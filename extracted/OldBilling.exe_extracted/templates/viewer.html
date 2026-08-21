@@ -578,6 +578,21 @@ async function sharePDF(invoiceId) {
 async function saveInvoice(invoiceId, containerId) {
 
     const container = document.getElementById(containerId);
+    if (container) {
+        const valInput = container.querySelector("#validity-date-input");
+        const valText = container.querySelector("#validity-date-text");
+        if (valInput) {
+            const curVal = valInput.value || "";
+            if (curVal) {
+                valInput.setAttribute("value", curVal);
+            } else {
+                valInput.removeAttribute("value");
+            }
+            if (valText) {
+                valText.textContent = curVal;
+            }
+        }
+    }
     const htmlData = container.innerHTML;
 
     const response = await fetch("/update-invoice", {
@@ -595,6 +610,24 @@ async function saveInvoice(invoiceId, containerId) {
 
     alert(result.message);
 }
+
+document.addEventListener("DOMContentLoaded", function () {
+    document.querySelectorAll(".invoice-content").forEach(container => {
+        const input = container.querySelector("#validity-date-input");
+        const text = container.querySelector("#validity-date-text");
+        if (input) {
+            let val = input.getAttribute("value");
+            if (!val && text && text.textContent && text.textContent.trim()) {
+                val = text.textContent.trim();
+            }
+            if (val) {
+                input.value = val;
+                input.setAttribute("value", val);
+                if (text) text.textContent = val;
+            }
+        }
+    });
+});
 </script>
 
 </body>

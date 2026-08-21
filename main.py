@@ -289,7 +289,15 @@ def update_invoice():
         if file_name:
             update_payload["file_name"] = file_name
 
-        db.table("invoices").update(update_payload).eq("invoice_id", inv_id).execute()
+        result = db.table("invoices").update(update_payload).eq("invoice_id", inv_id).execute()
+
+        # Fallback: if nothing was updated, try matching by integer primary key
+        if not result.data:
+            try:
+                int_id = int(inv_id)
+                db.table("invoices").update(update_payload).eq("id", int_id).execute()
+            except (ValueError, TypeError):
+                pass
 
         return jsonify({
             "message": "Invoice updated"
@@ -311,9 +319,17 @@ def rename_invoice():
     new_name = data.get("new_id", "").strip()
 
     try:
-        db.table("invoices").update({
+        result = db.table("invoices").update({
             "file_name": new_name
         }).eq("invoice_id", old_id).execute()
+
+        # Fallback: if nothing was updated, try matching by integer primary key
+        if not result.data:
+            try:
+                int_id = int(old_id)
+                db.table("invoices").update({"file_name": new_name}).eq("id", int_id).execute()
+            except (ValueError, TypeError):
+                pass
 
         return jsonify({
             "message": "Renamed"
@@ -334,7 +350,15 @@ def delete_invoice():
     delete_id = str(data.get("id", "")).strip()
 
     try:
-        db.table("invoices").delete().eq("invoice_id", delete_id).execute()
+        result = db.table("invoices").delete().eq("invoice_id", delete_id).execute()
+
+        # Fallback: if nothing was deleted, try matching by integer primary key
+        if not result.data:
+            try:
+                int_id = int(delete_id)
+                db.table("invoices").delete().eq("id", int_id).execute()
+            except (ValueError, TypeError):
+                pass
 
         return jsonify({
             "message": "Deleted"

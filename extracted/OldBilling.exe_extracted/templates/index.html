@@ -729,6 +729,51 @@
             return formattedDate;
         }
 
+        function syncValidityDate(val) {
+            const input = document.getElementById("validity-date-input");
+            const text = document.getElementById("validity-date-text");
+            if (!input) return;
+
+            const value = (val !== undefined && val !== null) ? String(val) : (input.value !== undefined ? input.value : (input.getAttribute("value") || ""));
+            input.value = value;
+            if (value) {
+                input.setAttribute("value", value);
+            } else {
+                input.removeAttribute("value");
+            }
+            if (text) {
+                text.textContent = value;
+            }
+        }
+
+        function restoreValidityDate() {
+            const input = document.getElementById("validity-date-input");
+            const text = document.getElementById("validity-date-text");
+            if (!input) return;
+
+            let savedVal = input.getAttribute("value");
+            if (!savedVal && input.value) {
+                savedVal = input.value;
+            }
+            if (!savedVal && text && text.textContent && text.textContent.trim()) {
+                savedVal = text.textContent.trim();
+            }
+
+            if (savedVal) {
+                input.value = savedVal;
+                input.setAttribute("value", savedVal);
+                if (text) {
+                    text.textContent = savedVal;
+                }
+            } else {
+                input.value = "";
+                input.removeAttribute("value");
+                if (text) {
+                    text.textContent = "";
+                }
+            }
+        }
+
         function updateValidityDays(val) {
             let days = parseInt(val, 10);
             if (isNaN(days) || days <= 0) {
@@ -819,6 +864,7 @@
 
             loadNewInvoice();   // load blank invoice on page load
             loadInvoiceList();
+            restoreValidityDate();
             reinitValidityDays();
 
         });
@@ -1352,6 +1398,7 @@
 
         async function generatePDFBlob() {
 
+            syncValidityDate();
             const element = document.getElementById("a4");
             reinitValidityDays();
 
@@ -1496,9 +1543,48 @@
 
         async function saveData() {
 
+            // Sync validity date runtime value → value attribute + span text BEFORE cloning
+            syncValidityDate();
             reinitValidityDays();
             const original = document.getElementById("a4");
+
+            // Bake ALL input runtime values into their value attributes so outerHTML captures them
+            original.querySelectorAll("input").forEach(function(inp) {
+                if (inp.type === "checkbox" || inp.type === "radio") {
+                    inp.checked ? inp.setAttribute("checked", "") : inp.removeAttribute("checked");
+                } else if (inp.value !== undefined) {
+                    inp.setAttribute("value", inp.value);
+                }
+            });
+            // Bake ALL textarea runtime values
+            original.querySelectorAll("textarea").forEach(function(ta) {
+                ta.textContent = ta.value;
+            });
+
             const clone = original.cloneNode(true);
+
+            // Double-check: explicitly sync validity date input value attribute and span text in clone
+            const origValInput = original.querySelector("#validity-date-input");
+            const cloneValInput = clone.querySelector("#validity-date-input");
+            const cloneValText = clone.querySelector("#validity-date-text");
+            if (origValInput && cloneValInput) {
+                const curVal = origValInput.value || "";
+                if (curVal) {
+                    cloneValInput.setAttribute("value", curVal);
+                    cloneValInput.value = curVal;
+                } else {
+                    cloneValInput.removeAttribute("value");
+                    cloneValInput.value = "";
+                }
+                if (cloneValText) {
+                    cloneValText.textContent = curVal;
+                }
+            }
+
+            // Normalize oninput on cloned input so saved HTML always has the correct handler
+            if (cloneValInput) {
+                cloneValInput.setAttribute("oninput", "syncValidityDate(this.value)");
+            }
 
             // Remove selected row highlight
             clone.querySelectorAll(".selected-row").forEach(row => {
@@ -1688,6 +1774,16 @@ ${escapeHtml(inv.name || 'Untitled Invoice')}
                 currentInvoiceId = data.id;
                 currentFileName = data.name;
 
+                // Restore validity date from saved HTML (value attr, span text, or runtime value)
+                restoreValidityDate();
+
+                // Normalize oninput handler — old invoices saved with legacy oninput attribute.
+                // Overwrite the attribute-based handler so typing always calls syncValidityDate.
+                const _valInput = document.getElementById("validity-date-input");
+                if (_valInput) {
+                    _valInput.oninput = function() { syncValidityDate(this.value); };
+                }
+
                 reinitValidityDays();
             } catch (err) {
                 console.error("Error loading invoice:", err);
@@ -1788,7 +1884,7 @@ ${escapeHtml(inv.name || 'Untitled Invoice')}
                         placeholder="—"
                         autocomplete="off"
                         spellcheck="false"
-                        oninput="document.getElementById('validity-date-text').textContent=this.value"
+                        oninput="syncValidityDate(this.value)"
                         style="width:90px; font-weight:bold; font-size:inherit; font-family:inherit; color:inherit; text-align:center; border:1px solid #888; border-radius:2px; padding:0 3px; background:transparent; outline:none;"
                     >
                     from the date of issue.
@@ -1934,6 +2030,7 @@ ${escapeHtml(inv.name || 'Untitled Invoice')}
 
             currentInvoiceId = null;
             currentFileName = null;
+            restoreValidityDate();
 
         }
 

@@ -24,6 +24,15 @@ class TestSupabaseInvoiceRoutes(unittest.TestCase):
             follow_redirects=True
         )
 
+    def test_health_endpoint(self):
+        # Health check works without login
+        response = self.client.get("/health")
+        self.assertEqual(response.status_code, 200)
+        data = response.get_json()
+        self.assertTrue(data["flask_running"])
+        self.assertTrue(data["supabase_initialized"])
+        self.assertIn("supabase_configured", data)
+
     def test_get_invoices_success(self):
         self.login()
         mock_table = MagicMock()
